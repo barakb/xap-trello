@@ -11,3 +11,5 @@ install:
   - tar -vxz -C $HOME/bin --strip=1 -f glide-v0.12.2-linux-amd64.tar.gz
   - export PATH="$HOME/bin:$PATH"
   - glide install
+
+script: go test -run TestTimeConsuming ./...
