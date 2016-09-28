@@ -2,5 +2,8 @@
 # set -x
 #
 export GOPATH=/golang/trello
+(cd src/github.com/barakb/trello/; git fetch; git rebase)
 
-go run main/main.go
+go build -o bin/trello-burndown github.com/barakb/trello/main
+
+./bin/rello-burndown
