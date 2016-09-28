@@ -1,0 +1,5 @@
+package: github.com/trello
+import:
+- package: github.com/VojtechVitek/go-trello
+  version: ^0.1.0
+- package: github.com/vharitonsky/iniflags
