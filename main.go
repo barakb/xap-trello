@@ -12,7 +12,7 @@ import (
 	"sync"
 	"flag"
 	"net/http"
-	"io"
+	"encoding/json"
 )
 
 var port = flag.Int("port", 8080, "Configure the server port")
@@ -29,14 +29,35 @@ func main() {
 		log.Fatal(err)
 	}
 	http.HandleFunc("/", hello)
+	fmt.Printf("Server started on https://localhost:%d\n", *port)
 	err = http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
 	fmt.Printf("listenAndServe returns %v\n", err)
 }
 
-
 func hello(w http.ResponseWriter, r *http.Request) {
-	io.WriteString(w, "Hello world!")
-	getBurndownChart(time.Now().AddDate(0, 0, -3), time.Now().AddDate(0, 0, 3), api)
+	//io.WriteString(w, "Hello world!")
+	burndown := getBurndownChart(time.Now().AddDate(0, 0, -3), time.Now().AddDate(0, 0, 3), api)
+	bytes, err := json.Marshal(burndown)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else {
+		w.Write(bytes)
+	}
+}
+
+type Event struct {
+	Date        string   `json:"date"`
+	DoneCards   int     `json:"doneCards"`
+	DonePoints  int     `json:"donePoints"`
+}
+
+type Burndown struct {
+	StartDate string   `json:"startDate"`
+	EndDate   string   `json:"endDate"`
+	Date      string   `json:"date"`
+	TotalCards  int     `json:"totalCards"`
+	TotalPoints int     `json:"totalPoints"`
+	Timeline  []Event    `json:"timeline"`
 }
 
 type cardWrapper struct {
@@ -111,7 +132,13 @@ func handleDoneList(start, end  time.Time, lst trello.List) chan []cardWrapper {
 	return res
 }
 
-func getBurndownChart(start, end  time.Time, api *trello.Client) {
+func getBurndownChart(start, end  time.Time, api *trello.Client)  Burndown {
+	burndown := Burndown{}
+	burndown.StartDate = start.Format(time.RFC3339)
+	burndown.EndDate = end.Format(time.RFC3339)
+	burndown.Date = time.Now().Format(time.RFC3339)
+
+
 	var doneCardsChan  chan []cardWrapper
 	doneCardsSlice := []cardWrapper{}
 	sprintCardsChan := make(chan int, 100)
@@ -161,7 +188,7 @@ func getBurndownChart(start, end  time.Time, api *trello.Client) {
 			donePoints := 0;
 			doneCards := 0;
 			for _, dc := range doneCardsSlice {
-				fmt.Printf("done %v card %s\n", dc.doneTime, dc.card.Name)
+				//fmt.Printf("done %v card %s\n", dc.doneTime, dc.card.Name)
 				doneCards += 1
 				donePoints += dc.points
 				totalCards += 1
@@ -172,12 +199,27 @@ func getBurndownChart(start, end  time.Time, api *trello.Client) {
 				totalCards += 1
 				totalPoints += sc
 			}
-			fmt.Printf("doneCards: %v\n", doneCards)
-			fmt.Printf("totalCards: %d\n", totalCards)
-			fmt.Printf("donePoints: %d\n", donePoints)
-			fmt.Printf("totalPoints: %d\n", totalPoints)
+			//fmt.Printf("doneCards: %v\n", doneCards)
+			//fmt.Printf("totalCards: %d\n", totalCards)
+			//fmt.Printf("donePoints: %d\n", donePoints)
+			//fmt.Printf("totalPoints: %d\n", totalPoints)
+			burndown.TotalCards = totalCards
+			burndown.TotalPoints = totalPoints
+			doneCards = 0;
+			donePoints = 0;
+			for _, dc := range doneCardsSlice {
+				doneCards += 1
+				donePoints += dc.points
+				event := Event{}
+				event.Date = dc.doneTime.Format(time.RFC3339)
+				event.DoneCards = doneCards
+				event.DonePoints = donePoints
+				burndown.Timeline = append(burndown.Timeline, event)
+			}
+
 		}
 	}
+	return burndown
 }
 
 func getCardPoints(card trello.Card) int {
