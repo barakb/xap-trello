@@ -12,4 +12,4 @@ install:
   - export PATH="$HOME/bin:$PATH"
   - glide install
 
-script: go test -run TestTimeConsuming ./...
+script: go test $(go list ./... | grep -v /vendor/)
