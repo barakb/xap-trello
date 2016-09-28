@@ -1,4 +1,4 @@
-package: github.com/trello
+package: github.com/barakb/trello
 import:
 - package: github.com/VojtechVitek/go-trello
   version: ^0.1.0

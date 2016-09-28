@@ -1,22 +1,32 @@
-FROM golang:1.6
+FROM golang:1.7.1
 MAINTAINER Barak Bar Orion  <barak.bar@gmail.com>
 
 RUN rm /bin/sh && ln -s /bin/bash /bin/sh
 
+#RUN apt-get update
+#RUN apt-get install -y software-properties-common
+
 RUN apt-get install -y git
 
-RUN add-apt-repository ppa:masterminds/glide &&  apt-get update
-RUN apt-get install glide
+#RUN add-apt-repository ppa:masterminds/glide &&  apt-get update
+#RUN apt-get install -y glide
 
-RUN mkdir -p /golang/trello/src/github.com/trello
-WORKDIR /golang/trello/src/github.com/trello
+RUN curl https://glide.sh/get | sh
 
-RUN git clone git@github.com:barakb/trello.git
+RUN mkdir -p /golang/trello/src/github.com/barakb
+WORKDIR /golang/trello/src/github.com/barakb
+
+RUN git clone https://github.com/barakb/trello.git
 
 
-WORKDIR /golang/trello/src/github.com/trello
+WORKDIR /golang/trello/src/github.com/barakb/trello
 
-env PATH /golang/trello/src/github.com/trello:$PATH
+RUN pwd
+RUN ls -lai
+
+env PATH /golang/trello/src/github.com/barakb/trello:$PATH
+
+RUN glide install
 
 
 
