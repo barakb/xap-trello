@@ -6,4 +6,4 @@ export GOPATH=/golang/trello
 
 go build -o bin/trello-burndown github.com/barakb/trello/main
 
-./bin/rello-burndown
+./bin/trello-burndown -config /trello-conf/trello.ini

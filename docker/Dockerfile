@@ -22,10 +22,6 @@ RUN glide install
 
 WORKDIR /golang/trello
 
-env GOPATH /golang/trello
-
-
 COPY serve.sh /golang/trello/
-
 
 EXPOSE 8080
