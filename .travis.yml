@@ -6,7 +6,7 @@ go:
 sudo: false
 
 install:
-  - wget "https://github.com/Masterminds/glide/releases/download/0.12.2/glide-0.12.2-linux-amd64.tar.gz"
+  - wget "https://github.com/Masterminds/glide/releases/glide-v0.12.2-linux-amd64.tar.gz"
   - mkdir -p $HOME/bin
-  - tar -vxz -C $HOME/bin --strip=1 -f glide-0.12.2-linux-amd64.tar.gz
+  - tar -vxz -C $HOME/bin --strip=1 -f glide-v0.12.2-linux-amd64.tar.gz
   - export PATH="$HOME/bin:$PATH"
