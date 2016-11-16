@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"github.com/VojtechVitek/go-trello"
 	"github.com/vharitonsky/iniflags"
 	"time"
 	"sort"
@@ -14,6 +13,7 @@ import (
 	"net/http"
 	"encoding/json"
 	"strings"
+	"github.com/barakb/go-trello"
 )
 
 var port = flag.Int("port", 8080, "Configure the server port")

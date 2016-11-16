@@ -1,4 +1,4 @@
-trello.iml
+*.iml
 *.idea
 vendor
 glide.lock

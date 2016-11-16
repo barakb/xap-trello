@@ -1,5 +1,9 @@
-package: github.com/barakb/trello
+package: github.com/barakb/xap-trello
 import:
-- package: github.com/VojtechVitek/go-trello
-  version: ^0.1.0
 - package: github.com/vharitonsky/iniflags
+- package: github.com/barakb/go-jira
+- package: github.com/barakb/go-trello
+- package: github.com/davecgh/go-spew
+  version: ^1.1.0
+  subpackages:
+  - spew
