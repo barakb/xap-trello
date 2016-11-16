@@ -8,20 +8,20 @@ RUN apt-get install -y git
 
 RUN curl https://glide.sh/get | sh
 
-RUN mkdir -p /golang/trello/src/github.com/barakb
-WORKDIR /golang/trello/src/github.com/barakb
+RUN mkdir -p /golang/xap-trello/src/github.com/barakb
+WORKDIR /golang/xap-trello/src/github.com/barakb
 
-RUN git clone https://github.com/barakb/trello.git
+RUN git clone https://github.com/barakb/xap-trello.git
 
 
-WORKDIR /golang/trello/src/github.com/barakb/trello
+WORKDIR /golang/xap-trello/src/github.com/barakb/xap-trello
 
-env PATH /golang/trello/src/github.com/barakb/trello:$PATH
+env PATH /golang/xap-trello/src/github.com/barakb/xap-trello:$PATH
 
 RUN glide install
 
-WORKDIR /golang/trello
+WORKDIR /golang/xap-trello
 
-COPY serve.sh /golang/trello/
+COPY serve.sh /golang/xap-trello/
 
 EXPOSE 8080

@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-docker build -t barakb/trello:0.1 .
+docker build -t barakb/xap-trello:0.1 .
