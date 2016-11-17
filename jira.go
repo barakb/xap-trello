@@ -72,15 +72,15 @@ func CreateXAPJiraOpen() (*Jira, error) {
 
 
 
-func (j Jira) CreateFeature(name, desc string) (string, error) {
-	return j.createXAPIssue(name, desc, j.IssueTypes["New Feature"].ID, "Feature")
+func (j Jira) CreateFeature(name, desc, cardUrl string) (string, error) {
+	return j.createXAPIssue(name, desc, j.IssueTypes["New Feature"].ID, "Feature", cardUrl)
 }
 
-func (j Jira) CreateBug(name, desc string) (string, error){
-	return j.createXAPIssue(name, desc, j.IssueTypes["Bug"].ID, "BUG")
+func (j Jira) CreateBug(name, desc, cardUrl string) (string, error){
+	return j.createXAPIssue(name, desc, j.IssueTypes["Bug"].ID, "BUG", cardUrl)
 }
 
-func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName string) (string, error){
+func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl string) (string, error){
 	var summary = desc
 	if summary == "" {
 		summary = name
@@ -92,10 +92,10 @@ func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName string) (str
 				ID: issueTypeId,
 			},
 			Project: jira.Project{
-				ID: "10060",  //todo remove this hardcoded
+				Key: "XAP",
 			},
 			Summary: name,
-			Description: summary,
+			Description: fmt.Sprintf("[trello:%s]\n\n%s\n", cardUrl, summary),
 		},
 	}
 	issue, _, err := j.Client.Issue.Create(&i)

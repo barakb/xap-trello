@@ -53,7 +53,7 @@ func main() {
 		for _, card := range cards {
 			if hasBugPattern(card.Name) {
 				if !isBugResolved(card.Desc) {
-					key, err := xapOpenJira.CreateBug(card.Name, card.Desc)
+					key, err := xapOpenJira.CreateBug(card.Name, card.Desc, card.Url)
 					if err != nil {
 						log.Printf("Failed to add jira bug for card %s, error is %s\n", card.Name, err.Error())
 						continue
@@ -69,7 +69,7 @@ func main() {
 				}
 			} else if hasFeaturePattern(card.Name) {
 				if !isFeatureResolved(card.Desc) {
-					key, err := xapOpenJira.CreateFeature(card.Name, card.Desc)
+					key, err := xapOpenJira.CreateFeature(card.Name, card.Desc, card.Url)
 					if err != nil {
 						log.Printf("Failed to add jira feature for card %s, error is %s\n", card.Name, err.Error())
 						continue
