@@ -38,7 +38,7 @@ func main() {
 		log.Printf("Using active sprint %q as name for trello list\n", xapOpenJira.ActiveSprint.Name)
 		trelloLists, err = board.Lists(xapOpenJira.ActiveSprint.Name)
 	} else {
-		names := regexp.MustCompile("\\s+").Split(*listsPtr, -1)
+		names := regexp.MustCompile("\\s+,\\s+").Split(*listsPtr, -1)
 		trelloLists, err = board.Lists(names...)
 	}
 	if err != nil {
