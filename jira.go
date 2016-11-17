@@ -9,10 +9,10 @@ import (
 )
 
 type Jira struct {
-	Client *jira.Client
+	Client       *jira.Client
 	ActiveSprint jira.Sprint
-	IssueTypes map[string]jira.IssueType
-	Url string
+	IssueTypes   map[string]jira.IssueType
+	Url          string
 }
 
 func create(url string) (*Jira, error) {
@@ -32,7 +32,7 @@ func create(url string) (*Jira, error) {
 
 func CreateXAPJiraOpen() (*Jira, error) {
 	j, err := create("https://xap-issues.atlassian.net")
-	if err != nil{
+	if err != nil {
 		return nil, err
 	}
 
@@ -45,7 +45,7 @@ func CreateXAPJiraOpen() (*Jira, error) {
 		return nil, err
 	}
 	boardsIdMap := map[string]string{}
-	for _, board := range boardsList.Values{
+	for _, board := range boardsList.Values {
 		boardsIdMap[board.Name] = fmt.Sprintf("%d", board.ID)
 	}
 	mainScrumBoardId := boardsIdMap["Main Scrum Board"]
@@ -53,34 +53,35 @@ func CreateXAPJiraOpen() (*Jira, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(activeSprints) != 1{
+	if len(activeSprints) != 1 {
 		return nil, fmt.Errorf("fail to find active sprint: %v\n", activeSprints)
 	}
 	j.ActiveSprint = activeSprints[0]
-
 	project, _, err := j.Client.Project.Get("XAP")
 	if err != nil {
 		return nil, err
 	}
 	j.IssueTypes = map[string]jira.IssueType{}
-	for _, issueType := range project.IssueTypes{
+	for _, issueType := range project.IssueTypes {
 		j.IssueTypes[issueType.Name] = issueType
 	}
 	return j, nil
 }
 
-
-
+func (j Jira) GetAllCurrentSprintIssues() ([]jira.Issue, error) {
+	issues, _, err := j.Client.Issue.Search(fmt.Sprintf("Sprint=%d", j.ActiveSprint.ID), nil)
+	return issues, err
+}
 
 func (j Jira) CreateFeature(name, desc, cardUrl string) (string, error) {
 	return j.createXAPIssue(name, desc, j.IssueTypes["New Feature"].ID, "Feature", cardUrl)
 }
 
-func (j Jira) CreateBug(name, desc, cardUrl string) (string, error){
+func (j Jira) CreateBug(name, desc, cardUrl string) (string, error) {
 	return j.createXAPIssue(name, desc, j.IssueTypes["Bug"].ID, "BUG", cardUrl)
 }
 
-func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl string) (string, error){
+func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl string) (string, error) {
 	var summary = desc
 	if summary == "" {
 		summary = name
@@ -95,7 +96,7 @@ func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl str
 				Key: "XAP",
 			},
 			Summary: name,
-			Description: fmt.Sprintf("[trello:%s]\n\n%s\n", cardUrl, summary),
+			Description: summary,
 		},
 	}
 	issue, _, err := j.Client.Issue.Create(&i)
@@ -103,7 +104,17 @@ func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl str
 		return "", err
 
 	}
-	return issue.Key, nil
+	err = j.AttachIssueToTrelloCard(issue.Key, cardUrl)
+	return issue.Key, err
+}
+
+func (j Jira) AttachIssueToTrelloCard(key, url string) error {
+	fieldId, err := j.Client.Issue.GetCustomFieldId(key, "Trello Card")
+	if err != nil{
+		return err
+	}
+	_, err = j.Client.Issue.SetCustomField(key, fieldId, url)
+	return err
 }
 
 func (j Jira) AddToActiveSprint(issueKey string) error {

@@ -52,23 +52,23 @@ func main() {
 		}
 		for _, card := range cards {
 			if hasBugPattern(card.Name) {
-				if !isBugResolved(card.Desc) {
-					key, err := xapOpenJira.CreateBug(card.Name, card.Desc, card.Url)
-					if err != nil {
-						log.Printf("Failed to add jira bug for card %s, error is %s\n", card.Name, err.Error())
-						continue
-					}
-					err = xapOpenJira.AddToActiveSprint(key)
-					if err != nil {
-						log.Printf("Failed to move bug:%s to sprint %s, error is %s\n", key, xapOpenJira.ActiveSprint.Name, err.Error())
-						continue
-					}
-					newDesc := fmt.Sprintf("[:ant: %[1]s](%s/browse/%[1]s).\n\n", key, xapOpenJira.Url) + card.Desc
-					card.SetDesc(newDesc)
-					log.Printf("Bug:%q -> %s/browse/%s\n", card.Name, xapOpenJira.Url, key)
+				if !isAttached(card.Desc) {
+						key, err := xapOpenJira.CreateBug(card.Name, card.Desc, card.Url)
+						if err != nil {
+							log.Printf("Failed to add jira bug for card %s, error is %s\n", card.Name, err.Error())
+							continue
+						}
+						err = xapOpenJira.AddToActiveSprint(key)
+						if err != nil {
+							log.Printf("Failed to move bug:%s to sprint %s, error is %s\n", key, xapOpenJira.ActiveSprint.Name, err.Error())
+							continue
+						}
+						newDesc := fmt.Sprintf("[:ant: %[1]s](%s/browse/%[1]s).\n\n", key, xapOpenJira.Url) + card.Desc
+						card.SetDesc(newDesc)
+						log.Printf("Bug:%q -> %s/browse/%s\n", card.Name, xapOpenJira.Url, key)
 				}
 			} else if hasFeaturePattern(card.Name) {
-				if !isFeatureResolved(card.Desc) {
+				if !isAttached(card.Desc) {
 					key, err := xapOpenJira.CreateFeature(card.Name, card.Desc, card.Url)
 					if err != nil {
 						log.Printf("Failed to add jira feature for card %s, error is %s\n", card.Name, err.Error())
@@ -85,16 +85,51 @@ func main() {
 				}
 			} else if hasTaskPattern(card.Name) {
 				//todo
-			}
+			} else if key, assigned := isAttachingRequired(card.Name); assigned{
+				if !isAttached(card.Desc) {
+					err := xapOpenJira.AttachIssueToTrelloCard(key, card.Url)
+					if err != nil {
+						log.Printf("Failed to attach card %s, to issue %s, error is:%s\n", card.Name, key, err.Error())
+						continue
+					}
+					newDesc := fmt.Sprintf("[:link: %[1]s](%s/browse/%[1]s).\n\n", key, xapOpenJira.Url) + card.Desc
+					card.SetDesc(newDesc)
+					log.Printf("Feature:%q (linked)-> %s/browse/%s\n", card.Name, xapOpenJira.Url, key)
+					err = xapOpenJira.AddToActiveSprint(key)
+					if err != nil {
+						log.Printf("Failed to move card %s, to current sprint, error is:%s\n", key, err.Error())
+						continue
+					}
 
+				}
+			}
 		}
 	}
 
+	/*
+	issues, err := xapOpenJira.GetAllCurrentSprintIssues()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, issue := range issues{
+		cards, err := xapTrello.SearchMember(issue.Key)
+		if err != nil{
+			log.Printf("Failed to search for card with jira key %q, error is:%s", issue.Key, err.Error())
+			continue
+		}
+		if len(cards) == 0{
+			log.Printf("search for %q return %d cards %v\n", issue.Key, len(cards), cards)
+		}else{
+			log.Printf("search for %q return %d cards %v\n", issue.Key, len(cards), cards)
+		}
+	}
+	*/
+
 }
 
-func isBugResolved(desc string) bool {
+func isAttached(desc string) bool {
 	//[:ant: XAP-13053](https://xap-issues.atlassian.net/browse/XAP-13053).
-	re := regexp.MustCompile(`\[:ant:\s+XAP\-(\d+)\]\s*\(https://xap\-issues.atlassian.net/browse/XAP\-(\d+)\)`)
+	re := regexp.MustCompile(`\[.*XAP\-(\d+)\]\s*\(https://xap\-issues.atlassian.net/browse/XAP\-(\d+)\)`)
 	found := re.FindStringSubmatch(desc)
 	if found != nil {
 		return len(found) == 3 && found[1] == found[2]
@@ -102,15 +137,16 @@ func isBugResolved(desc string) bool {
 	return false
 }
 
-func isFeatureResolved(desc string) bool {
-	//[:bulb: XAP-13053](https://xap-issues.atlassian.net/browse/XAP-13053).
-	re := regexp.MustCompile(`\[:bulb:\s+XAP\-(\d+)\]\s*\(https://xap\-issues.atlassian.net/browse/XAP\-(\d+)\)`)
-	found := re.FindStringSubmatch(desc)
+func isAttachingRequired(name string) (string, bool) {
+	//XAP-13053
+	re := regexp.MustCompile(`XAP\-(\d+)`)
+	found := re.FindStringSubmatch(name)
 	if found != nil {
-		return len(found) == 3 && found[1] == found[2]
+		return "XAP-" + found[1], true
 	}
-	return false
+	return "", false
 }
+
 
 func hasBugPattern(name string) bool {
 	return strings.Contains(strings.ToLower(name), "xap-bug")
