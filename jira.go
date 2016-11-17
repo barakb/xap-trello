@@ -86,7 +86,14 @@ func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl str
 	if summary == "" {
 		summary = name
 	}
-	summary = strings.TrimLeft(regexp.MustCompile(fmt.Sprintf("(?i)XAP-%s", issueTypeName)).ReplaceAllLiteralString(summary, ""), " ")
+	summary = regexp.MustCompile("(?i)XAP-[^ ]+").ReplaceAllLiteralString(summary, "")
+	summary = strings.TrimLeft(regexp.MustCompile("\\([0-9.]+\\)").ReplaceAllLiteralString(summary, ""), " ")
+	summary = strings.TrimLeft(regexp.MustCompile("\\{[0-9.]+\\}").ReplaceAllLiteralString(summary, ""), " ")
+	summary = strings.TrimSpace(summary)
+	name = regexp.MustCompile("(?i)XAP-[^ ]+").ReplaceAllLiteralString(name, "")
+	name = strings.TrimLeft(regexp.MustCompile("\\([0-9.]+\\)").ReplaceAllLiteralString(name, ""), " ")
+	name = strings.TrimLeft(regexp.MustCompile("\\{[0-9.]+\\}").ReplaceAllLiteralString(name, ""), " ")
+	name = strings.TrimSpace(name)
 	i := jira.Issue{
 		Fields: &jira.IssueFields{
 			Type: jira.IssueType{
