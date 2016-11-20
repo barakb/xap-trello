@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"github.com/barakb/go-trello"
 	"github.com/barakb/go-jira"
-	"github.com/davecgh/go-spew/spew"
 )
 
 var featureRegex = regexp.MustCompile(`(?i)XAP-FEATURE`)
@@ -28,17 +27,17 @@ func main() {
 
 	jiraClient := createJiraClient()
 
-	issue, _, err := jiraClient.Issue.Get("XAP-12352")
-	spew.Dump(issue)
-	storyPointsFieldId, err := jiraClient.Issue.GetCustomFieldId("XAP-12352", "Story Points")
-	if err != nil {
-		log.Fatalf("Failed to find story points field id: %s", err)
-	}
-	log.Printf("story points field id:%s\n", storyPointsFieldId)
-	storyPoints := int(issue.Fields.Unknowns[storyPointsFieldId].(float64))
-	log.Printf("story points is:%d\n", storyPoints)
-
-	jiraClient.Issue.GetCustomFieldId("XAP-12352", storyPointsFieldId)
+	//issue, _, err := jiraClient.Issue.Get("XAP-12352")
+	//spew.Dump(issue)
+	//storyPointsFieldId, err := jiraClient.Issue.GetCustomFieldId("XAP-12352", "Story Points")
+	//if err != nil {
+	//	log.Fatalf("Failed to find story points field id: %s", err)
+	//}
+	//log.Printf("story points field id:%s\n", storyPointsFieldId)
+	//storyPoints := int(issue.Fields.Unknowns[storyPointsFieldId].(float64))
+	//log.Printf("story points is:%d\n", storyPoints)
+	//
+	//jiraClient.Issue.GetCustomFieldId("XAP-12352", storyPointsFieldId)
 
 
 	metaInfo, _, _ := jiraClient.Issue.GetCreateMeta("XAP")
