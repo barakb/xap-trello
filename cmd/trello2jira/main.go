@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	listsPtr := flag.String("lists", "", "the lists in trello XAP Scrum board that should be processed, default is current sprint name from jira, use * for all and space delimiter list of strings for multiple values")
+	listsPtr := flag.Int("lists", 3, "The nuber of lists (start counting from the left) in the 'XAP Scrum' board to process")
 	flag.Parse()
 
 	xapTrello, err := xap_trello.CreateXAPTrello()
@@ -30,21 +30,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var trelloLists []trello.List
-	log.Printf("listPtr is %q\n", *listsPtr)
-	if *listsPtr == "*" {
-		trelloLists, err = board.Lists()
-	} else if *listsPtr == "" {
-		log.Printf("Using active sprint %q as name for trello list\n", xapOpenJira.ActiveSprint.Name)
-		trelloLists, err = board.Lists(xapOpenJira.ActiveSprint.Name)
-	} else {
-		names := regexp.MustCompile("\\s+,\\s+").Split(*listsPtr, -1)
-		trelloLists, err = board.Lists(names...)
-	}
+	trelloLists, err := board.Lists()
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, aList := range trelloLists {
+	var trelloCardByJiraKey = map[string]trello.Card{}
+	for n, aList := range trelloLists {
+		if *listsPtr <= n{
+			break
+		}
 		log.Printf("Processing trello list %q\n", aList.Name)
 		cards, err := aList.Cards()
 		if err != nil {
@@ -52,8 +46,8 @@ func main() {
 		}
 		for _, card := range cards {
 			if hasBugPattern(card.Name) {
-				if !isAttached(card.Desc) {
-						key, err := xapOpenJira.CreateBug(card.Name, card.Desc, card.Url)
+				if key, ok := isAttached(card.Desc); !ok {
+					key, err := xapOpenJira.CreateBug(card.Name, card.Desc, card.Url)
 						if err != nil {
 							log.Printf("Failed to add jira bug for card %s, error is %s\n", card.Name, err.Error())
 							continue
@@ -65,10 +59,17 @@ func main() {
 						}
 						newDesc := fmt.Sprintf("[:ant: %[1]s](%s/browse/%[1]s).\n\n", key, xapOpenJira.Url) + card.Desc
 						card.SetDesc(newDesc)
+						trelloCardByJiraKey[key] = card
 						log.Printf("Bug:%q -> %s/browse/%s\n", card.Name, xapOpenJira.Url, key)
+				}else{
+					trelloCardByJiraKey[key] = card
+					err = xapOpenJira.AddToActiveSprint(key)
+					if err != nil {
+						log.Printf("Failed to move card %s, to current sprint, error is:%s\n", key, err.Error())
+					}
 				}
 			} else if hasFeaturePattern(card.Name) {
-				if !isAttached(card.Desc) {
+				if key, ok := isAttached(card.Desc); !ok {
 					key, err := xapOpenJira.CreateFeature(card.Name, card.Desc, card.Url)
 					if err != nil {
 						log.Printf("Failed to add jira feature for card %s, error is %s\n", card.Name, err.Error())
@@ -81,12 +82,20 @@ func main() {
 					}
 					newDesc := fmt.Sprintf("[:bulb: %[1]s](%s/browse/%[1]s).\n\n", key, xapOpenJira.Url) + card.Desc
 					card.SetDesc(newDesc)
+					trelloCardByJiraKey[key] = card
 					log.Printf("Feature:%q -> %s/browse/%s\n", card.Name, xapOpenJira.Url, key)
+				}else{
+					trelloCardByJiraKey[key] = card
+					err = xapOpenJira.AddToActiveSprint(key)
+					if err != nil {
+						log.Printf("Failed to move card %s, to current sprint, error is:%s\n", key, err.Error())
+					}
 				}
 			} else if hasTaskPattern(card.Name) {
 				//todo
 			} else if key, assigned := isAttachingRequired(card.Name); assigned{
-				if !isAttached(card.Desc) {
+				trelloCardByJiraKey[key] = card
+				if _, ok := isAttached(card.Desc); !ok {
 					err := xapOpenJira.AttachIssueToTrelloCard(key, card.Url)
 					if err != nil {
 						log.Printf("Failed to attach card %s, to issue %s, error is:%s\n", card.Name, key, err.Error())
@@ -95,46 +104,62 @@ func main() {
 					newDesc := fmt.Sprintf("[:link: %[1]s](%s/browse/%[1]s).\n\n", key, xapOpenJira.Url) + card.Desc
 					card.SetDesc(newDesc)
 					log.Printf("Feature:%q (linked)-> %s/browse/%s\n", card.Name, xapOpenJira.Url, key)
-					err = xapOpenJira.AddToActiveSprint(key)
-					if err != nil {
-						log.Printf("Failed to move card %s, to current sprint, error is:%s\n", key, err.Error())
-						continue
-					}
-
 				}
+				err = xapOpenJira.AddToActiveSprint(key)
+				if err != nil {
+					log.Printf("Failed to move card %s, to current sprint, error is:%s\n", key, err.Error())
+				}
+
 			}
 		}
 	}
 
-	/*
+
 	issues, err := xapOpenJira.GetAllCurrentSprintIssues()
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, issue := range issues{
+		if _, ok := trelloCardByJiraKey[issue.Key]; !ok{
+			fmt.Printf("Jira sprint issue %s is not in first 3 trello lists, moving to backlog\n", issue.Key)
+			_, err := xapOpenJira.Client.Sprint.MoveIssuesToBackLog(issue.Key)
+			if err != nil{
+				log.Printf("Failed to move issue %s to backlog, error is: %s\n", issue.Key, err.Error())
+			}
+		}
+		/*
+                transitions, _, err := xapOpenJira.Client.Issue.GetTransitions(issue.ID)
+		if err != nil{
+			log.Printf("Failed to get transition for issue %s, error is %s\n", issue.Key, err.Error())
+			continue
+		}
+		for _, transition := range transitions{
+			log.Printf("Issue %s has possible transition %+v\n", issue.Key, transition)
+		}
 		cards, err := xapTrello.SearchMember(issue.Key)
 		if err != nil{
-			log.Printf("Failed to search for card with jira key %q, error is:%s", issue.Key, err.Error())
+			//log.Printf("Failed to search for card with jira key %q, error is:%s", issue.Key, err.Error())
 			continue
 		}
 		if len(cards) == 0{
-			log.Printf("search for %q return %d cards %v\n", issue.Key, len(cards), cards)
+			//log.Printf("search for %q return %d cards %v\n", issue.Key, len(cards), cards)
 		}else{
-			log.Printf("search for %q return %d cards %v\n", issue.Key, len(cards), cards)
+			//log.Printf("search for %q return %d cards %v\n", issue.Key, len(cards), cards)
 		}
+		*/
 	}
-	*/
+
 
 }
 
-func isAttached(desc string) bool {
+func isAttached(desc string) (string, bool) {
 	//[:ant: XAP-13053](https://xap-issues.atlassian.net/browse/XAP-13053).
 	re := regexp.MustCompile(`\[.*XAP\-(\d+)\]\s*\(https://xap\-issues.atlassian.net/browse/XAP\-(\d+)\)`)
 	found := re.FindStringSubmatch(desc)
 	if found != nil {
-		return len(found) == 3 && found[1] == found[2]
+		return found[1], len(found) == 3 && found[1] == found[2]
 	}
-	return false
+	return "", false
 }
 
 func isAttachingRequired(name string) (string, bool) {
@@ -142,7 +167,7 @@ func isAttachingRequired(name string) (string, bool) {
 	re := regexp.MustCompile(`XAP\-(\d+)`)
 	found := re.FindStringSubmatch(name)
 	if found != nil {
-		return "XAP-" + found[1], true
+		return found[0], true
 	}
 	return "", false
 }

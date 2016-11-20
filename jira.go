@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"regexp"
+	"log"
 )
 
 type Jira struct {
@@ -125,6 +126,8 @@ func (j Jira) AttachIssueToTrelloCard(key, url string) error {
 }
 
 func (j Jira) AddToActiveSprint(issueKey string) error {
+	log.Printf("Moving %s to sprint %s\n", issueKey, j.ActiveSprint.Name)
 	_, err := j.Client.Sprint.MoveIssuesToSprint(j.ActiveSprint.ID, []string{issueKey})
 	return err
 }
+
