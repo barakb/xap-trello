@@ -33,6 +33,13 @@ func (c *Trello) SearchMember(query string) ([]trello.Card, error) {
 	}
 	return member.SearchCards(query)
 }
+func (c *Trello) Notifications() ([]trello.Notification, error) {
+	member, err := c.Client.Member("me")
+	if err != nil {
+		return []trello.Notification{}, err
+	}
+	return member.Notifications()
+}
 
 
 

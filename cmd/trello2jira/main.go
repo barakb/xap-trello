@@ -26,7 +26,6 @@ func main() {
 
 	board, err := xapTrello.Board("XAP Scrum")
 	if err != nil {
-		log.Println(err.Error())
 		log.Fatal(err)
 	}
 
