@@ -1,0 +1,50 @@
+<html>
+<head>
+    <title>xap-trello</title>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+        google.charts.load('current', {'packages':['corechart']});
+        google.charts.setOnLoadCallback(scheduleDraw);
+        var etag = ""
+        function drawChart() {
+            var headers = etag ? {"If-None-Match": etag } : {}
+            fetch('http://{{.Host}}/api/timeline', {
+                'method': 'get',
+                'headers' : headers,
+            }).then(function(response) {
+                if (response.status == 304){
+                    return;
+                }
+                var nEtag = response.headers.get('ETag')
+                if(nEtag != etag){
+                    etag = nEtag;
+                    response.json().then(function(j){
+                            var data = new google.visualization.DataTable();
+                            data.addColumn('string', 'Day');
+                            data.addColumn('number', 'Points');
+                            data.addRows(j.map(function(e){ return [e.day, e.points]; }));
+                            var options = {'title':'Sprint burn down',
+                                   'width':600,
+                                   'height':300};
+                            var chart = new google.visualization.ColumnChart(document.getElementById('chart_div'));
+                            chart.draw(data, options);
+                            //todo draw https://developers.google.com/chart/interactive/docs/gallery/combochart
+                    }
+                );
+	   }});
+	}
+
+
+        function scheduleDraw(){
+            drawChart()
+            setInterval(drawChart,  1000);
+        }
+
+
+    </script>
+</head>
+<body>
+  <div id="chart_div"></div>
+  <a href="http://{{.Host}}/api/timeline">timeline</a>
+</body>
+</html>
