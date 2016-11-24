@@ -16,7 +16,7 @@ type Route struct {
 type Routes []Route
 
 var listWatcher = NewWatcher(func(l trello.List) bool {
-	return l.Name == "Barak"
+	return l.Name == "Done in m6!"
 }, 10 * time.Second)
 
 var routes = Routes{

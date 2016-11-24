@@ -8,6 +8,8 @@ import (
 	"log"
 	"golang.org/x/net/context"
 	"sync"
+	"github.com/barakb/go-jira"
+	"strings"
 )
 
 type TimelineEvent struct {
@@ -54,13 +56,14 @@ func (l ListLog) Timeline() (timeline []TimelineEvent) {
 	return timeline
 }
 
-func toDayStr(time time.Time) string{
-	const layout = "Jan 2"
+func toDayStr(time time.Time) string {
+	const layout = "Mon, Jan 2"
 	return time.Format(layout)
 }
 
 type ListLog struct {
 	TrelloClient  *Trello
+	JiraClient    *Jira
 	ListId        string
 	ListEvents    []ListEvent
 	LastEventId   string
@@ -222,7 +225,19 @@ func points(name string) (points int) {
 	match := re.FindStringSubmatch(name)
 	if len(match) == 2 {
 		points, _ = strconv.Atoi(match[1])
+		return points
 	}
+
+	if strings.Contains(strings.ToUpper(name), "{S}") || strings.Contains(strings.ToUpper(name), "{SMALL}"){
+		 return 5
+	}
+	if strings.Contains(strings.ToUpper(name), "{M}") || strings.Contains(strings.ToUpper(name), "{MED}"){
+		return 25
+	}
+	if strings.Contains(strings.ToUpper(name), "{L}") || strings.Contains(strings.ToUpper(name), "{LARGE}"){
+		 return 100
+	}
+
 	return points
 }
 
@@ -230,18 +245,31 @@ type ListWatcher struct {
 	CancelFunc          context.CancelFunc
 	currentTimelineLock sync.RWMutex
 	currentTimeline     []TimelineEvent
+	totalPoints         int
+	sprint              jira.Sprint
 }
 
-func (lw ListWatcher) Timeline() []TimelineEvent {
+func (lw ListWatcher) Timeline() ([]TimelineEvent, int) {
 	lw.currentTimelineLock.RLock()
 	defer lw.currentTimelineLock.RUnlock()
-	return lw.currentTimeline
+	return lw.currentTimeline, lw.totalPoints
+}
+
+func (lw ListWatcher) CurrentSprint() jira.Sprint {
+	return lw.sprint
 }
 
 func NewWatcher(selector func(trello.List) bool, waitDuration time.Duration) *ListWatcher {
 	res := &ListWatcher{}
 	ctx, cancel := context.WithCancel(context.Background())
 	res.CancelFunc = cancel
+
+	xapOpenJira, err := CreateXAPJiraOpen()
+	if err != nil {
+		log.Fatal(err)
+	}
+	res.sprint = xapOpenJira.ActiveSprint
+
 	xapTrello, err := CreateXAPTrello()
 	if err != nil {
 		log.Fatal(err)
@@ -257,40 +285,56 @@ func NewWatcher(selector func(trello.List) bool, waitDuration time.Duration) *Li
 		log.Fatal(err)
 	}
 
-	ll := &ListLog{TrelloClient:xapTrello, ListId:"", ListEvents:nil}
+	ll := &ListLog{TrelloClient:xapTrello, JiraClient:xapOpenJira, ListId:"", ListEvents:nil}
 	//todo on listId change start with fresh log.
 
 	var timelineSize = 0;
+	var lastTotalPoints = 0;
 	go func() {
 		for {
-
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				for _, aList := range trelloLists {
+				timeline := []TimelineEvent{}
+				totalPoints := 0
+				for index, aList := range trelloLists {
 					if selector(aList) {
 						ll.ListId = aList.Id
 						ll.UpdateFromTrello()
-						timeline := ll.Timeline()
+						timeline = ll.Timeline()
+						totalPoints += sumPoints(aList)
 						//log.Printf("timeline (%d)\n", len(timeline))
-						if timelineSize < len(timeline) {
-							res.currentTimelineLock.Lock()
-							res.currentTimeline = timeline
-							res.currentTimelineLock.Unlock()
-							for _, timelineEvent := range timeline {
-								log.Printf("points:%d, card:%q, time:%s\n", timelineEvent.Points, timelineEvent.CardName, timelineEvent.Time)
-							}
-							timelineSize = len(timeline)
-							log.Println("\n\n\n***********************\n\n\n ")
-						}
-						time.Sleep(waitDuration)
+					} else if index <= 3 {
+						totalPoints += sumPoints(aList)
 					}
+
+				}
+				if timelineSize < len(timeline) || totalPoints != lastTotalPoints {
+					res.currentTimelineLock.Lock()
+					res.currentTimeline = timeline
+					res.totalPoints = totalPoints
+					res.currentTimelineLock.Unlock()
+					for _, timelineEvent := range timeline {
+						log.Printf("points:%d, card:%q, time:%s\n", timelineEvent.Points, timelineEvent.CardName, timelineEvent.Time)
+					}
+					timelineSize = len(timeline)
+					lastTotalPoints = totalPoints
+					log.Println("\n\n\n***********************\n\n\n ")
 				}
 
+				time.Sleep(waitDuration)
 			}
 
 		}
 	}()
 	return res
+}
+
+func sumPoints(lst trello.List) (p int) {
+	cards, _ := lst.Cards()
+	for _, card := range cards {
+		p += points(card.Name)
+	}
+	return p;
 }

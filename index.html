@@ -14,6 +14,7 @@
             }).then(function(response) {
                 if (response.status == 304){
                     return;
+                    return;
                 }
                 var nEtag = response.headers.get('ETag')
                 if(nEtag != etag){
@@ -21,14 +22,19 @@
                     response.json().then(function(j){
                             var data = new google.visualization.DataTable();
                             data.addColumn('string', 'Day');
-                            data.addColumn('number', 'Points');
-                            data.addRows(j.map(function(e){ return [e.day, e.points]; }));
-                            var options = {'title':'Sprint burn down',
-                                   'width':600,
-                                   'height':300};
-                            var chart = new google.visualization.ColumnChart(document.getElementById('chart_div'));
+                            data.addColumn('number', 'Actual');
+                            data.addColumn('number', 'Expected');
+                            data.addRows(j.days.map(function(e, index){
+                                                return  [e.name, e.actual, e.expected];
+                                         }));
+                            var options = {'title':'Sprint ' + j.name + ' (' + j.points+ ')',
+                                    //'curveType': 'function',
+                                    'legend': { position: 'bottom' },
+                                    'interpolateNulls' : false,
+                                   };
+                            var chart = new google.visualization.LineChart(document.getElementById('chart_div'));
                             chart.draw(data, options);
-                            //todo draw https://developers.google.com/chart/interactive/docs/gallery/combochart
+                            //todo draw https://dev elopers.google.com/chart/interactive/docs/gallery/combochart
                     }
                 );
 	   }});
@@ -44,7 +50,7 @@
     </script>
 </head>
 <body>
-  <div id="chart_div"></div>
+  <div id="chart_div" style="width: 900px; height: 500px"></div>
   <a href="http://{{.Host}}/api/timeline">timeline</a>
 </body>
 </html>
