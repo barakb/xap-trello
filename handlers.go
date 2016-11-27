@@ -85,7 +85,7 @@ func createSprint(sprint jira.Sprint, timeline map[string]TimelineEvent, totalPo
 			s.Days = append(s.Days, Day{Name:day, Actual:nil, WorkingDay:true, Expected: expected})
 		}
 	}
-	s.Days = append([]Day{{"Palnning", s.Points, float64(s.Points), false}},s.Days...)
+	s.Days = append([]Day{{"Planning", s.Points, float64(s.Points), false}},s.Days...)
 	return s
 
 }
