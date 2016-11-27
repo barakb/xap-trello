@@ -50,6 +50,19 @@ func CreateXAPJiraOpen() (*Jira, error) {
 		boardsIdMap[board.Name] = fmt.Sprintf("%d", board.ID)
 	}
 	mainScrumBoardId := boardsIdMap["Main Scrum Board"]
+
+	//start := time.Date(2016, 11, 27, 0, 0, 0, 0, time.UTC)
+	//end := time.Date(2016, 12, 1, 0, 0, 0, 0, time.UTC)
+	//msb, _ := strconv.Atoi(mainScrumBoardId)
+	//fmt.Printf("creating sprint from %s to %s at board %d\n", start, end, msb)
+	//s, _, e := j.Client.Board.CreateSprint("12.1-M7", start, end,  msb)
+	//
+	//if e != nil{
+	//	return nil, err
+	//}
+	//
+	//fmt.Printf("Sprint is %+v\n", s)
+
 	activeSprints, _, err := j.Client.Board.GetAllActiveSprints(mainScrumBoardId)
 	if err != nil {
 		return nil, err
@@ -66,6 +79,8 @@ func CreateXAPJiraOpen() (*Jira, error) {
 	for _, issueType := range project.IssueTypes {
 		j.IssueTypes[issueType.Name] = issueType
 	}
+
+
 	return j, nil
 }
 
