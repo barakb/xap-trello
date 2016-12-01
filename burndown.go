@@ -2,222 +2,286 @@ package xap_trello
 
 import (
 	"github.com/barakb/go-trello"
+	"log"
 	"time"
+	"github.com/barakb/go-jira"
+	"os"
+	"fmt"
+	"bufio"
+	"encoding/json"
+	"io/ioutil"
+	"errors"
 	"regexp"
 	"strconv"
-	"log"
-	"golang.org/x/net/context"
-	"sync"
-	"github.com/barakb/go-jira"
 	"strings"
+	"sync"
 )
 
-type TimelineEvent struct {
-	Time     time.Time `json:"time"`
-	Points   int `json:"points"`
-	Day      string `json:"day"`
-	CardId   string `json:"-"`
-	CardName string `json:"-"`
+type BurnDownData struct {
+	TrelloEvents []TrelloState `json:"trello_events"`
+	SprintStatus SprintStatus `json:"sprint_status"`
+	Version int `json:"version"`
 }
 
-type ListEvent struct {
-	Time                   time.Time
-	Id, Type, CardId, Name string
-	Points                 int
+type Burndown struct {
+	BurnDownData
+	sync.RWMutex
+	done   chan struct{}
+	Sprint jira.Sprint
+	Trello *Trello
 }
 
-func (l ListLog) Timeline() (timeline []TimelineEvent) {
-	storyPoints := 0
-	presenceMap := map[string]bool{}
-	for _, event := range l.ListEvents {
-		//log.Printf("Processing event %+v\n", event)
-		if event.Points <= 0 {
-			//log.Printf("skiping event %+v\n", event)
-			continue
-		}
-		if event.Type == "create" || event.Type == "add" {
-			if _, ok := presenceMap[event.CardId]; !ok {
-				//log.Printf("Adding %d points because of %+v\n", event.Points, event)
-				storyPoints += event.Points
-				presenceMap[event.CardId] = true
-			} else {
-				continue
-			}
-		} else if _, ok := presenceMap[event.CardId]; ok {
-			//log.Printf("removing %d points because of %+v\n", event.Points, event)
-			storyPoints -= event.Points
-			delete(presenceMap, event.CardId)
-		} else {
-			continue
-		}
-		day := toDayStr(event.Time)
-		timeline = append(timeline, TimelineEvent{Time:event.Time, Points:storyPoints, Day:day, CardId:event.CardId, CardName:event.Name})
+func NewBurnDown() *Burndown{
+	xapOpenJira, err := CreateXAPJiraOpen()
+	if err != nil {
+		log.Fatal(err)
 	}
-	return timeline
+
+	xapTrello, err := CreateXAPTrello()
+	if err != nil {
+		log.Fatal(err)
+	}
+	burndown := &Burndown{Trello:xapTrello, Sprint:xapOpenJira.ActiveSprint}
+	go burndown.ScanLoop(2 * time.Second)
+	return burndown
+}
+
+type TrelloState struct {
+	Done, InProgress, Planned int
+	Time                      time.Time
+}
+
+func (ss TrelloState) sameAs(other TrelloState) bool {
+	return ss.Planned == other.Planned && ss.InProgress == other.InProgress && ss.Done == other.Done && toDayStr(ss.Time) == toDayStr(other.Time)
+}
+
+type Day struct {
+	Name       string `json:"name"`
+	Total      interface{} `json:"total"`
+	Bottom      interface{} `json:"bottom"`
+	Top      interface{} `json:"top"`
+	Expected   float64 `json:"expected"`
+	WorkingDay bool `json:"working_day"`
+}
+
+type SprintStatus struct {
+	Version int
+	Name  string `json:"name"`
+	Days  []Day `json:"days"`
+	Today int `json:"today"`
+}
+
+func (b *Burndown) statePerDay(events []TrelloState) map[string]TrelloState {
+	m := map[string]TrelloState{}
+	for _, event := range events {
+		eventDay := toDayStr(event.Time)
+		m[eventDay] = event
+	}
+	return m
+}
+
+func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatus) {
+	order := []string{}
+	m := map[string]bool{}
+	date := b.Sprint.StartDate
+	for date.Before(*b.Sprint.EndDate) {
+		dayStr := toDayStr(*date)
+		order = append(order, dayStr)
+		m[dayStr] = true
+		nextDay := date.Add(24 * time.Hour)
+		date = &nextDay
+	}
+	dayStr := toDayStr(*b.Sprint.EndDate)
+	order = append(order, dayStr)
+	m[dayStr] = true
+
+	s = &SprintStatus{Name:b.Sprint.Name, Today:indexOf(order, toDayStr(time.Now())), Days:[]Day{}}
+	firstDay, err := findFirstFilledDay(timeline, order)
+	if err != nil {
+		return s
+	}
+	total := firstDay.Done + firstDay.InProgress + firstDay.Planned
+	perDay := float64(total) / float64(len(order))
+	pointsAdded := 0
+	var lastDay *Day
+	for index, name := range order {
+		expected := float64(total) - (float64(index + 1) * perDay)
+		day := &Day{Name:name, Expected:expected, WorkingDay:true}
+		if e, ok := timeline[name]; ok &&  index <= s.Today{
+			day.Total = e.Done + e.Planned + e.InProgress
+			day.Top = day.Total.(int) - e.Done
+			if lastDay != nil {
+				log.Printf("Added points lastDay is: %+v\n", lastDay)
+				pointsAdded += (day.Total.(int) - lastDay.Total.(int))
+			}
+			day.Bottom = pointsAdded
+		}else{
+			day.Total = total
+			day.Bottom = pointsAdded
+			day.Top = total
+		}
+		log.Printf("Processed day %+v\n", day)
+		s.Days = append(s.Days, *day)
+		lastDay = day
+
+	}
+	s.Days = append([]Day{{Name:"Planning", Top:total, WorkingDay:false, Expected:float64(total), Total:total, Bottom:0}}, s.Days...)
+	return s
+}
+
+func findFirstFilledDay(timeline map[string]TrelloState, order []string) (TrelloState, error) {
+	for _, day := range order {
+		state := timeline[day]
+		if state.InProgress != 0 || state.Planned != 0 || state.Done != 0 {
+			return state, nil
+		}
+	}
+	return TrelloState{}, errors.New("Not found")
+}
+
+func (b *Burndown) scanOnce() (res TrelloState, err error) {
+	log.Println("ScanOnce")
+	board, err := b.Trello.Board("XAP Scrum")
+	if err != nil {
+		return res, err
+	}
+
+	trelloLists, err := board.Lists()
+	if err != nil {
+		return res, err
+	}
+
+	for index, trelloList := range trelloLists {
+		if index == 0 {
+			res.Done = sumPoints(trelloList)
+		} else if index == 1 {
+			res.InProgress = sumPoints(trelloList)
+		} else if index == 2 {
+			res.Planned = sumPoints(trelloList)
+		} else {
+			break
+		}
+	}
+	res.Time = time.Now()
+	return res, nil
+}
+
+func (b *Burndown) ScanLoop(delay time.Duration) {
+	b.Load()
+	compressedTimeline := b.compressTimeline()
+	sprintStatus := b.createSprint(compressedTimeline)
+	sprintStatus.Version = b.Version
+	b.Version = b.Version + 1
+	b.RWMutex.Lock()
+	b.SprintStatus = *sprintStatus
+	b.RWMutex.Unlock()
+	for {
+		sprintState, err := b.scanOnce()
+		if err != nil {
+			log.Fatalf("got error %q, while calling burndown.ScanOnce()", err.Error())
+		}
+
+		//log.Printf("sprintState is %+v\n", sprintState)
+
+		if len(b.TrelloEvents) == 0 || !sprintState.sameAs(b.TrelloEvents[len(b.TrelloEvents) - 1]) {
+			b.TrelloEvents = append(b.TrelloEvents, sprintState)
+			log.Printf("Timeline changed %v\n", b.TrelloEvents)
+			compressedTimeline := b.compressTimeline()
+			sprintStatus := b.createSprint(compressedTimeline)
+			sprintStatus.Version = b.Version
+			b.Version = b.Version + 1
+			b.RWMutex.Lock()
+			b.SprintStatus = *sprintStatus
+			b.RWMutex.Unlock()
+			err := b.Save()
+			if err != nil {
+				log.Printf("Error %q, while saving\n", err.Error())
+			}
+		}
+		select {
+		case <-b.done:
+			log.Println("ScanLoop exiting")
+			return
+		case <-time.After(delay):
+			continue
+		}
+	}
+}
+
+
+
+func (b *Burndown) GetSprintStatus() *SprintStatus {
+	b.RWMutex.RLock()
+	defer b.RWMutex.RUnlock()
+	return &b.SprintStatus
+}
+
+func (b *Burndown) compressTimeline() map[string]TrelloState {
+	m := map[string]TrelloState{}
+	for _, event := range b.TrelloEvents {
+		eventDay := toDayStr(event.Time)
+		m[eventDay] = event
+	}
+	return m
+}
+
+func (b *Burndown) Save() error {
+	err := os.MkdirAll("data", os.ModePerm)
+	if err != nil {
+		return err
+	}
+	startDate := b.Sprint.StartDate
+	filename := fmt.Sprintf("data/%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
+
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	bytes, err := json.MarshalIndent(b.BurnDownData, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(bytes)
+	if err != nil {
+		return err
+	}
+	w.Flush()
+	return nil
+}
+
+func (b *Burndown) Load() (err error) {
+	startDate := b.Sprint.StartDate
+	filename := fmt.Sprintf("data/%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	bytes, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(bytes, &(b.BurnDownData))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func sumPoints(lst trello.List) (p int) {
+	cards, _ := lst.Cards()
+	for _, card := range cards {
+		p += points(card.Name)
+	}
+	return p;
 }
 
 func toDayStr(time time.Time) string {
 	const layout = "Mon, Jan 2"
 	return time.Format(layout)
-}
-
-type ListLog struct {
-	TrelloClient  *Trello
-	JiraClient    *Jira
-	ListId        string
-	ListEvents    []ListEvent
-	LastEventId   string
-	LastEventTime time.Time
-}
-
-func (l *ListLog)  UpdateFromTrello() error {
-	lst, err := l.TrelloClient.Client.List(l.ListId)
-	if err != nil {
-		return err
-	}
-	actions, err := lst.Actions()
-	if err != nil {
-		return err
-	}
-	var lastId = ""
-	var lastEventTime = ""
-	if l.LastEventId != "" {
-		index := findLastIdIndex(actions, l.LastEventId)
-		actions = actions[0:index]
-	}
-	if 0 < len(actions) {
-		lastId = actions[0].Id
-		lastEventTime = actions[0].Date
-	}
-	//log.Printf("Reading %d events from trello\n", len(actions))
-	for _, action := range reverseActions(actions) {
-		// skip actions from the past
-		if action.Type == "updateCard" {
-			//log.Printf("**** Update card action%+v\n", action)
-			if action.Data.ListBefore != action.Data.ListAfter {
-				if lastId == "" {
-					lastId = action.Id
-					lastEventTime = action.Date
-				}
-				if action.Data.ListAfter.Id == lst.Id {
-					l.AddEvent(action, "add")
-					if err != nil {
-						return err
-					}
-				} else if action.Data.ListBefore.Id == lst.Id {
-					l.AddEvent(action, "rm")
-					if err != nil {
-						return err
-					}
-				}
-			}
-		} else if action.Type == "createCard" {
-			if lastId == "" {
-				lastId = action.Id
-				lastEventTime = action.Date
-			}
-			l.AddEvent(action, "create")
-			if err != nil {
-				return err
-			}
-		}
-	}
-	if lastId != "" {
-		//log.Printf("Updating lastId from %s to %s\n", l.LastEventId, lastId)
-		l.LastEventId = lastId
-		l.LastEventTime, _ = time.Parse(time.RFC3339, lastEventTime)
-	}
-
-	actionsView := replay(l.ListEvents)
-	cards, err := lst.Cards()
-	if err != nil {
-		return err
-	}
-	// add all cards that their add event was lost.
-	cardsMap := l.addMissingCardsEvents(cards, actionsView)
-	// remove all cards that their remove event was lost
-	cardsMap = l.removeExtraCardsEvents(actionsView, cardsMap, cards)
-	//for key, _ := range actionsView {
-	//	log.Printf("List %s contains card %s\n", lst.Name, key)
-	//}
-	return nil
-}
-
-func findLastIdIndex(actions []trello.Action, id string) int {
-	for index, action := range actions {
-		if action.Id == id {
-			return index
-		}
-	}
-	return len(actions)
-}
-
-func (l *ListLog)  AddEvent(action trello.Action, eventType string) error {
-	listAction, err := fromTrelloAction(action, eventType)
-	if err != nil {
-		return err
-	}
-	l.ListEvents = append(l.ListEvents, *listAction)
-	return nil
-}
-
-
-// remove all cards that their rm event was lost.
-func (l *ListLog) removeExtraCardsEvents(actionsView map[string]bool, cardsMap map[string]*trello.Card, cards []trello.Card) (map[string]*trello.Card) {
-	for _, card := range cards {
-		cardsMap[card.Id] = &card
-		if _, ok := actionsView[card.Id]; !ok {
-			//log.Printf("-------------------- removeExtraCardsEvents missing Card Event !!!!!! %s\n", card.Name)
-			l.ListEvents = append(l.ListEvents, ListEvent{Time:l.LastEventTime.Add(1 * time.Millisecond), Id:"", Type:"rm", CardId:card.Id, Name:card.Name, Points: points(card.Name)})
-			actionsView[card.Id] = true
-		}
-	}
-	return cardsMap
-}
-
-// add all cards that their add event was lost.
-func (l *ListLog) addMissingCardsEvents(cards []trello.Card, actionsView map[string]bool) (map[string]*trello.Card) {
-	cardsMap := map[string]*trello.Card{}
-	for _, card := range cards {
-		cardsMap[card.Id] = &card
-		if _, ok := actionsView[card.Id]; !ok {
-			//log.Printf("-------------------- addMissingCardsEvents missing Card Event !!!!!! %s\n", card.Name)
-			l.ListEvents = append(l.ListEvents, ListEvent{Time:l.LastEventTime.Add(1 * time.Millisecond), Id:"", Type:"add", CardId:card.Id, Name:card.Name, Points: points(card.Name)})
-			actionsView[card.Id] = true
-		}
-	}
-	return cardsMap
-}
-
-func replay(events []ListEvent) map[string]bool {
-	res := map[string]bool{}
-	for _, action := range events {
-		//log.Printf("play:%s %q, %d, at %s\n", action.Type, action.Name, action.Points, action.Time)
-		if action.Type == "create" || action.Type == "add" {
-			res[action.CardId] = true
-		} else {
-			delete(res, action.CardId)
-		}
-	}
-	return res
-}
-
-func reverseActions(items []trello.Action) []trello.Action {
-	res := items[:]
-	for i, j := 0, len(res) - 1; i < j; i, j = i + 1, j - 1 {
-		res[i], res[j] = res[j], res[i]
-	}
-	return res
-}
-
-func fromTrelloAction(action trello.Action, Type string) (*ListEvent, error) {
-	t, err := time.Parse(time.RFC3339, action.Date)
-	if err != nil {
-		return nil, err
-	}
-	name := action.Data.Card.Name
-	var points = points(name)
-	return &ListEvent{Time: t, Id:action.Id, Type:Type, CardId:action.Data.Card.Id, Name: name, Points:points}, nil
 }
 
 func points(name string) (points int) {
@@ -229,112 +293,14 @@ func points(name string) (points int) {
 	}
 
 	if strings.Contains(strings.ToUpper(name), "{S}") || strings.Contains(strings.ToUpper(name), "{SMALL}"){
-		 return 5
+		return 5
 	}
 	if strings.Contains(strings.ToUpper(name), "{M}") || strings.Contains(strings.ToUpper(name), "{MED}"){
 		return 25
 	}
 	if strings.Contains(strings.ToUpper(name), "{L}") || strings.Contains(strings.ToUpper(name), "{LARGE}"){
-		 return 100
+		return 100
 	}
 
 	return points
-}
-
-type ListWatcher struct {
-	CancelFunc          context.CancelFunc
-	currentTimelineLock sync.RWMutex
-	currentTimeline     []TimelineEvent
-	totalPoints         int
-	sprint              jira.Sprint
-}
-
-func (lw ListWatcher) Timeline() ([]TimelineEvent, int) {
-	lw.currentTimelineLock.RLock()
-	defer lw.currentTimelineLock.RUnlock()
-	return lw.currentTimeline, lw.totalPoints
-}
-
-func (lw ListWatcher) CurrentSprint() jira.Sprint {
-	return lw.sprint
-}
-
-func NewWatcher(selector func(trello.List) bool, waitDuration time.Duration) *ListWatcher {
-	res := &ListWatcher{}
-	ctx, cancel := context.WithCancel(context.Background())
-	res.CancelFunc = cancel
-
-	xapOpenJira, err := CreateXAPJiraOpen()
-	if err != nil {
-		log.Fatal(err)
-	}
-	res.sprint = xapOpenJira.ActiveSprint
-
-	xapTrello, err := CreateXAPTrello()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	board, err := xapTrello.Board("XAP Scrum")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	trelloLists, err := board.Lists()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ll := &ListLog{TrelloClient:xapTrello, JiraClient:xapOpenJira, ListId:"", ListEvents:nil}
-	//todo on listId change start with fresh log.
-
-	var timelineSize = 0;
-	var lastTotalPoints = 0;
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				timeline := []TimelineEvent{}
-				totalPoints := 0
-				for index, aList := range trelloLists {
-					if selector(aList) {
-						ll.ListId = aList.Id
-						ll.UpdateFromTrello()
-						timeline = ll.Timeline()
-						totalPoints += sumPoints(aList)
-						//log.Printf("timeline (%d)\n", len(timeline))
-					} else if index <= 3 {
-						totalPoints += sumPoints(aList)
-					}
-
-				}
-				if timelineSize < len(timeline) || totalPoints != lastTotalPoints {
-					res.currentTimelineLock.Lock()
-					res.currentTimeline = timeline
-					res.totalPoints = totalPoints
-					res.currentTimelineLock.Unlock()
-					for _, timelineEvent := range timeline {
-						log.Printf("points:%d, card:%q, time:%s\n", timelineEvent.Points, timelineEvent.CardName, timelineEvent.Time)
-					}
-					timelineSize = len(timeline)
-					lastTotalPoints = totalPoints
-					log.Println("\n\n\n***********************\n\n\n ")
-				}
-
-				time.Sleep(waitDuration)
-			}
-
-		}
-	}()
-	return res
-}
-
-func sumPoints(lst trello.List) (p int) {
-	cards, _ := lst.Cards()
-	for _, card := range cards {
-		p += points(card.Name)
-	}
-	return p;
 }

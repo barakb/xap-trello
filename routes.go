@@ -2,8 +2,6 @@ package xap_trello
 
 import (
 	"net/http"
-	"github.com/barakb/go-trello"
-	"time"
 )
 
 type Route struct {
@@ -15,16 +13,17 @@ type Route struct {
 
 type Routes []Route
 
-var listWatcher = NewWatcher(func(l trello.List) bool {
-	return l.Name == "Done in m7!"
-}, 10 * time.Second)
+
+var burndown = NewBurnDown()
+
+
 
 var routes = Routes{
 	Route{
 		"GET_TIMELINE",
 		"GET",
 		"/api/timeline",
-		CreateTimelineHandler(listWatcher),
+		CreateTimelineHandler(burndown),
 	},
 	Route{
 		"VIEW",

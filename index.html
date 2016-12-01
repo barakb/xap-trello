@@ -25,7 +25,7 @@
                             data.addColumn('number', 'Actual');
                             data.addColumn('number', 'Expected');
                             data.addRows(j.days.map(function(e, index){
-                                                return  [e.name, e.actual, e.expected];
+                                                return  [e.name, e.top, e.expected];
                                          }));
                             var options = {'title':'Sprint ' + j.name + ' (' + j.points+ ')',
                                     //'curveType': 'function',
