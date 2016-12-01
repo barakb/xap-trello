@@ -20,18 +20,19 @@ import (
 type BurnDownData struct {
 	TrelloEvents []TrelloState `json:"trello_events"`
 	SprintStatus SprintStatus `json:"sprint_status"`
-	Version int `json:"version"`
+	Version      int `json:"version"`
 }
 
 type Burndown struct {
 	BurnDownData
 	sync.RWMutex
-	done   chan struct{}
-	Sprint jira.Sprint
-	Trello *Trello
+	done     chan struct{}
+	requests chan BurndownCommand
+	Sprint   jira.Sprint
+	Trello   *Trello
 }
 
-func NewBurnDown() *Burndown{
+func NewBurnDown() *Burndown {
 	xapOpenJira, err := CreateXAPJiraOpen()
 	if err != nil {
 		log.Fatal(err)
@@ -41,10 +42,15 @@ func NewBurnDown() *Burndown{
 	if err != nil {
 		log.Fatal(err)
 	}
-	burndown := &Burndown{Trello:xapTrello, Sprint:xapOpenJira.ActiveSprint}
-	go burndown.ScanLoop(2 * time.Second)
+	burndown := &Burndown{Trello:xapTrello, Sprint:xapOpenJira.ActiveSprint, requests: make(chan BurndownCommand)}
+	go burndown.ScanLoop(10 * time.Second)
 	return burndown
 }
+
+type BurndownCommand interface {
+	Execute(burndown *Burndown)
+}
+
 
 type TrelloState struct {
 	Done, InProgress, Planned int
@@ -58,17 +64,17 @@ func (ss TrelloState) sameAs(other TrelloState) bool {
 type Day struct {
 	Name       string `json:"name"`
 	Total      interface{} `json:"total"`
-	Bottom      interface{} `json:"bottom"`
-	Top      interface{} `json:"top"`
+	Bottom     interface{} `json:"bottom"`
+	Top        interface{} `json:"top"`
 	Expected   float64 `json:"expected"`
 	WorkingDay bool `json:"working_day"`
 }
 
 type SprintStatus struct {
 	Version int
-	Name  string `json:"name"`
-	Days  []Day `json:"days"`
-	Today int `json:"today"`
+	Name    string `json:"name"`
+	Days    []Day `json:"days"`
+	Today   int `json:"today"`
 }
 
 func (b *Burndown) statePerDay(events []TrelloState) map[string]TrelloState {
@@ -107,7 +113,7 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 	for index, name := range order {
 		expected := float64(total) - (float64(index + 1) * perDay)
 		day := &Day{Name:name, Expected:expected, WorkingDay:true}
-		if e, ok := timeline[name]; ok &&  index <= s.Today{
+		if e, ok := timeline[name]; ok &&  index <= s.Today {
 			day.Total = e.Done + e.Planned + e.InProgress
 			day.Top = day.Total.(int) - e.Done
 			if lastDay != nil {
@@ -115,7 +121,7 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 				pointsAdded += (day.Total.(int) - lastDay.Total.(int))
 			}
 			day.Bottom = pointsAdded
-		}else{
+		} else {
 			day.Total = total
 			day.Bottom = pointsAdded
 			day.Top = total
@@ -167,7 +173,7 @@ func (b *Burndown) scanOnce() (res TrelloState, err error) {
 }
 
 func (b *Burndown) ScanLoop(delay time.Duration) {
-	b.Load()
+	b.load()
 	compressedTimeline := b.compressTimeline()
 	sprintStatus := b.createSprint(compressedTimeline)
 	sprintStatus.Version = b.Version
@@ -193,7 +199,7 @@ func (b *Burndown) ScanLoop(delay time.Duration) {
 			b.RWMutex.Lock()
 			b.SprintStatus = *sprintStatus
 			b.RWMutex.Unlock()
-			err := b.Save()
+			err := b.save()
 			if err != nil {
 				log.Printf("Error %q, while saving\n", err.Error())
 			}
@@ -202,13 +208,13 @@ func (b *Burndown) ScanLoop(delay time.Duration) {
 		case <-b.done:
 			log.Println("ScanLoop exiting")
 			return
+		case cmd := <-b.requests:
+			cmd.Execute(burndown)
 		case <-time.After(delay):
 			continue
 		}
 	}
 }
-
-
 
 func (b *Burndown) GetSprintStatus() *SprintStatus {
 	b.RWMutex.RLock()
@@ -225,7 +231,7 @@ func (b *Burndown) compressTimeline() map[string]TrelloState {
 	return m
 }
 
-func (b *Burndown) Save() error {
+func (b *Burndown) save() error {
 	err := os.MkdirAll("data", os.ModePerm)
 	if err != nil {
 		return err
@@ -251,7 +257,7 @@ func (b *Burndown) Save() error {
 	return nil
 }
 
-func (b *Burndown) Load() (err error) {
+func (b *Burndown) load() (err error) {
 	startDate := b.Sprint.StartDate
 	filename := fmt.Sprintf("data/%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
 	f, err := os.Open(filename)
@@ -269,6 +275,21 @@ func (b *Burndown) Load() (err error) {
 		return err
 	}
 	return nil
+}
+
+type burndownSaveCommand struct {
+	res chan struct{}
+}
+func (c burndownSaveCommand) Execute(burndown *Burndown){
+	log.Println("Executing save command");
+	burndown.save()
+	c.res <- struct{}{}
+}
+
+func (b *Burndown) Save() chan struct{} {
+	res := make(chan struct{})
+	go func (){b.requests <- burndownSaveCommand{res}}()
+	return res
 }
 
 func sumPoints(lst trello.List) (p int) {
@@ -292,13 +313,13 @@ func points(name string) (points int) {
 		return points
 	}
 
-	if strings.Contains(strings.ToUpper(name), "{S}") || strings.Contains(strings.ToUpper(name), "{SMALL}"){
+	if strings.Contains(strings.ToUpper(name), "{S}") || strings.Contains(strings.ToUpper(name), "{SMALL}") {
 		return 5
 	}
-	if strings.Contains(strings.ToUpper(name), "{M}") || strings.Contains(strings.ToUpper(name), "{MED}"){
+	if strings.Contains(strings.ToUpper(name), "{M}") || strings.Contains(strings.ToUpper(name), "{MED}") {
 		return 25
 	}
-	if strings.Contains(strings.ToUpper(name), "{L}") || strings.Contains(strings.ToUpper(name), "{LARGE}"){
+	if strings.Contains(strings.ToUpper(name), "{L}") || strings.Contains(strings.ToUpper(name), "{LARGE}") {
 		return 100
 	}
 

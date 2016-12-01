@@ -38,6 +38,14 @@ func CreateTimelineHandler(burndown *Burndown) http.HandlerFunc {
 	}
 }
 
+func CreateSaveHandler(burndown *Burndown) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Sending save")
+		<- burndown.Save()
+		log.Println("Saving done");
+		w.WriteHeader(http.StatusOK)
+	}
+}
 
 func CreateViewHandler() http.HandlerFunc {
 	t := template.Must(template.ParseFiles("index.html"))
@@ -47,7 +55,7 @@ func CreateViewHandler() http.HandlerFunc {
 }
 
 
-func  indexOf(strings []string, value string) int {
+func indexOf(strings []string, value string) int {
 	for p, v := range strings {
 		if (v == value) {
 			return p
