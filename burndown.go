@@ -21,15 +21,16 @@ type BurnDownData struct {
 	TrelloEvents []TrelloState `json:"trello_events"`
 	SprintStatus SprintStatus `json:"sprint_status"`
 	Version      int `json:"version"`
+	Sprint   jira.Sprint
 }
 
 type Burndown struct {
 	BurnDownData
 	sync.RWMutex
 	done     chan struct{}
-	requests chan BurndownCommand
-	Sprint   jira.Sprint
+	commands chan BurndownCommand
 	Trello   *Trello
+	Jira     *Jira
 }
 
 func NewBurnDown() *Burndown {
@@ -42,15 +43,12 @@ func NewBurnDown() *Burndown {
 	if err != nil {
 		log.Fatal(err)
 	}
-	burndown := &Burndown{Trello:xapTrello, Sprint:xapOpenJira.ActiveSprint, requests: make(chan BurndownCommand)}
-	go burndown.ScanLoop(10 * time.Second)
+	burndown := &Burndown{Trello:xapTrello, commands: make(chan BurndownCommand), Jira:xapOpenJira, BurnDownData:BurnDownData{Sprint:xapOpenJira.ActiveSprint}}
+	go burndown.ScanLoop(10 * time.Second) //todo remove
 	return burndown
 }
 
-type BurndownCommand interface {
-	Execute(burndown *Burndown)
-}
-
+type BurndownCommand func(burndown *Burndown)
 
 type TrelloState struct {
 	Done, InProgress, Planned int
@@ -208,8 +206,8 @@ func (b *Burndown) ScanLoop(delay time.Duration) {
 		case <-b.done:
 			log.Println("ScanLoop exiting")
 			return
-		case cmd := <-b.requests:
-			cmd.Execute(burndown)
+		case cmd := <-b.commands:
+			cmd(b)
 		case <-time.After(delay):
 			continue
 		}
@@ -277,19 +275,64 @@ func (b *Burndown) load() (err error) {
 	return nil
 }
 
-type burndownSaveCommand struct {
-	res chan struct{}
-}
-func (c burndownSaveCommand) Execute(burndown *Burndown){
-	log.Println("Executing save command");
-	burndown.save()
-	c.res <- struct{}{}
+func (b *Burndown) StartNewSprint() chan struct{} {
+	res := make(chan struct{})
+	go func() {
+		b.commands <- func(b *Burndown) {
+			//b.startNewSprint()
+			go func() {
+				res <- struct{}{}
+			}()
+		}
+	}()
+	return res
 }
 
-func (b *Burndown) Save() chan struct{} {
-	res := make(chan struct{})
-	go func (){b.requests <- burndownSaveCommand{res}}()
-	return res
+func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
+	const DATE_PATTERN = "2006-01-02"
+	b.save()
+
+	if b.Jira.ActiveSprint.Name != "" {
+		fmt.Printf("Closing old sprint %s\n", b.Jira.ActiveSprint.Name)
+		_, _, err := b.Jira.Client.Board.CloseSprint(fmt.Sprintf("%d", b.Jira.ActiveSprint.ID))
+		if err != nil {
+			return err
+		}
+	}
+
+	startDate, err := time.Parse(DATE_PATTERN, start)
+	if err != nil {
+		return err
+	}
+	endDate, err := time.Parse(DATE_PATTERN, end)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Creating a new sprint %s\n", name)
+	sprint, _, err := b.Jira.Client.Board.CreateSprint(name, startDate, endDate, b.Jira.MainScrumBoardId)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Moving items from trello to sprint %s\n", sprint.Name)
+	err = Trello2Jira(3, sprint.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Starting sprint %s\n", sprint.Name)
+	sprint, _, err = b.Jira.Client.Board.StartSprint(fmt.Sprintf("%d", sprint.ID))
+	if err != nil {
+		return err
+	}
+
+
+	//todo change active sprint
+	b.Sprint = *sprint
+	b.SprintStatus = SprintStatus{}
+	b.TrelloEvents = []TrelloState{}
+	b.Version = 0
+	b.Jira.ActiveSprint = *sprint
+	return nil
 }
 
 func sumPoints(lst trello.List) (p int) {

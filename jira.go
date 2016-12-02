@@ -14,6 +14,7 @@ type Jira struct {
 	ActiveSprint jira.Sprint
 	IssueTypes   map[string]jira.IssueType
 	Url          string
+	MainScrumBoardId int
 }
 
 func create(url string) (*Jira, error) {
@@ -48,8 +49,10 @@ func CreateXAPJiraOpen() (*Jira, error) {
 	boardsIdMap := map[string]string{}
 	for _, board := range boardsList.Values {
 		boardsIdMap[board.Name] = fmt.Sprintf("%d", board.ID)
+		if board.Name == "Main Scrum Board" {
+			j.MainScrumBoardId = board.ID
+		}
 	}
-	mainScrumBoardId := boardsIdMap["Main Scrum Board"]
 
 	//start := time.Date(2016, 11, 27, 0, 0, 0, 0, time.UTC)
 	//end := time.Date(2016, 12, 1, 0, 0, 0, 0, time.UTC)
@@ -63,14 +66,16 @@ func CreateXAPJiraOpen() (*Jira, error) {
 	//
 	//fmt.Printf("Sprint is %+v\n", s)
 
-	activeSprints, _, err := j.Client.Board.GetAllActiveSprints(mainScrumBoardId)
+	activeSprints, _, err := j.Client.Board.GetAllActiveSprints(fmt.Sprintf("%d", j.MainScrumBoardId))
 	if err != nil {
 		return nil, err
 	}
 	if len(activeSprints) != 1 {
-		return nil, fmt.Errorf("fail to find active sprint: %v\n", activeSprints)
+		fmt.Printf("fail to find active sprint: %v\n", activeSprints)
+		//return nil, fmt.Errorf("fail to find active sprint: %v\n", activeSprints)
+	}else {
+		j.ActiveSprint = activeSprints[0]
 	}
-	j.ActiveSprint = activeSprints[0]
 	project, _, err := j.Client.Project.Get("XAP")
 	if err != nil {
 		return nil, err
@@ -86,6 +91,11 @@ func CreateXAPJiraOpen() (*Jira, error) {
 
 func (j Jira) GetAllCurrentSprintIssues() ([]jira.Issue, error) {
 	issues, _, err := j.Client.Issue.Search(fmt.Sprintf("Sprint=%d", j.ActiveSprint.ID), nil)
+	return issues, err
+}
+
+func (j Jira) GetAllSprintIssues(sprintId int) ([]jira.Issue, error) {
+	issues, _, err := j.Client.Issue.Search(fmt.Sprintf("Sprint=%d", sprintId), nil)
 	return issues, err
 }
 
@@ -141,8 +151,12 @@ func (j Jira) AttachIssueToTrelloCard(key, url string) error {
 }
 
 func (j Jira) AddToActiveSprint(issueKey string) error {
-	log.Printf("Moving %s to sprint %s\n", issueKey, j.ActiveSprint.Name)
-	_, err := j.Client.Sprint.MoveIssuesToSprint(j.ActiveSprint.ID, []string{issueKey})
+	return j.AddToSprint(issueKey, j.ActiveSprint.ID)
+}
+
+func (j Jira) AddToSprint(issueKey string, activeSprintId int) error {
+	log.Printf("Moving %s to sprint %d\n", issueKey, activeSprintId)
+	_, err := j.Client.Sprint.MoveIssuesToSprint(activeSprintId, []string{issueKey})
 	return err
 }
 

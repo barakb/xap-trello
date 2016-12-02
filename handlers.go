@@ -41,7 +41,7 @@ func CreateTimelineHandler(burndown *Burndown) http.HandlerFunc {
 func CreateSaveHandler(burndown *Burndown) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Sending save")
-		<- burndown.Save()
+		//<- burndown.createSprint() //todo
 		log.Println("Saving done");
 		w.WriteHeader(http.StatusOK)
 	}
