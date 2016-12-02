@@ -17,7 +17,7 @@ type Routes []Route
 var burndown *Burndown
 var routes  Routes
 
-func init(){
+func InitRouters(){
 	burndown = NewBurnDown()
 	routes = Routes{
 		Route{

@@ -4,3 +4,5 @@ vendor
 glide.lock
 trello.ini
 data
+github-token.json
+github-secret.json
