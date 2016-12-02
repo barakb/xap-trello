@@ -289,7 +289,7 @@ func (b *Burndown) StartNewSprint() chan struct{} {
 }
 
 func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
-	const DATE_PATTERN = "2006-01-02"
+	//const DATE_PATTERN = "2006-01-02"
 	b.save()
 
 	if b.Jira.ActiveSprint.Name != "" {
@@ -300,17 +300,17 @@ func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
 		}
 	}
 
-	startDate, err := time.Parse(DATE_PATTERN, start)
-	if err != nil {
-		return err
-	}
-	endDate, err := time.Parse(DATE_PATTERN, end)
-	if err != nil {
-		return err
-	}
+	//startDate, err := time.Parse(DATE_PATTERN, start)
+	//if err != nil {
+	//	return err
+	//}
+	//endDate, err := time.Parse(DATE_PATTERN, end)
+	//if err != nil {
+	//	return err
+	//}
 
 	fmt.Printf("Creating a new sprint %s\n", name)
-	sprint, _, err := b.Jira.Client.Board.CreateSprint(name, startDate, endDate, b.Jira.MainScrumBoardId)
+	sprint, _, err := b.Jira.Client.Board.CreateSprint(name, start, end, b.Jira.MainScrumBoardId)
 	if err != nil {
 		return err
 	}
