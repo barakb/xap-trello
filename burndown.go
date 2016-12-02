@@ -102,7 +102,12 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 	s = &SprintStatus{Name:b.Sprint.Name, Today:indexOf(order, toDayStr(time.Now())), Days:[]Day{}}
 	firstDay, err := findFirstFilledDay(timeline, order)
 	if err != nil {
-		return s
+		if 0 < len(b.TrelloEvents){
+			firstDay = b.TrelloEvents[len(b.TrelloEvents) - 1]
+		}else {
+			log.Printf("Fail to find data, error is: %q\n", err)
+			return s
+		}
 	}
 	total := firstDay.Done + firstDay.InProgress + firstDay.Planned
 	perDay := float64(total) / float64(len(order))
