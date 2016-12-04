@@ -33,10 +33,16 @@ func InitRouters(){
 			CreateViewHandler(),
 		},
 		Route{
+			"NEXT_SPRINT",
+			"GET",
+			"/api/sprint/next",
+			CreateGuessSprintParamsHandler(),
+		},
+		Route{
 			"SAVE",
 			"POST",
-			"/api/timeline",
-			CreateSaveHandler(burndown),
+			"/api/sprint/next",
+			CreateNextSprintHandler(burndown),
 		},
 		//Route{
 		//	"CFG.ADD.MACHINES",

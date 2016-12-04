@@ -127,7 +127,6 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 		} else {
 			day.Total = total
 			day.Bottom = pointsAdded
-			day.Top = total
 		}
 		log.Printf("Processed day %+v\n", day)
 		s.Days = append(s.Days, *day)
@@ -294,7 +293,6 @@ func (b *Burndown) StartNewSprint() chan struct{} {
 }
 
 func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
-	//const DATE_PATTERN = "2006-01-02"
 	b.save()
 
 	if b.Jira.ActiveSprint.Name != "" {
@@ -305,14 +303,28 @@ func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
 		}
 	}
 
-	//startDate, err := time.Parse(DATE_PATTERN, start)
-	//if err != nil {
-	//	return err
-	//}
-	//endDate, err := time.Parse(DATE_PATTERN, end)
-	//if err != nil {
-	//	return err
-	//}
+	board, err := b.Trello.Board("XAP Scrum")
+	if err != nil {
+		return err
+	}
+	lists, err := board.Lists()
+	if err != nil {
+		return err
+	}
+	for index, l := range lists {
+		if index == 0 {
+			err := l.Close()
+			if err != nil{
+				return err
+			}
+			break;
+		}
+	}
+
+	err = board.AddList(fmt.Sprintf("Done in %s", name), 0)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("Creating a new sprint %s\n", name)
 	sprint, _, err := b.Jira.Client.Board.CreateSprint(name, start, end, b.Jira.MainScrumBoardId)
