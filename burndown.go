@@ -279,11 +279,11 @@ func (b *Burndown) load() (err error) {
 	return nil
 }
 
-func (b *Burndown) StartNewSprint() chan struct{} {
+func (b *Burndown) StartNewSprint(name string, start, end time.Time) chan struct{} {
 	res := make(chan struct{})
 	go func() {
 		b.commands <- func(b *Burndown) {
-			//b.startNewSprint()
+			b.startNewSprint(name, start, end)
 			go func() {
 				res <- struct{}{}
 			}()
