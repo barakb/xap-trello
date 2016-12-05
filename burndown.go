@@ -110,6 +110,7 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 		}
 	}
 	total := firstDay.Done + firstDay.InProgress + firstDay.Planned
+	planningTotal := total
 	perDay := float64(total) / float64(len(order))
 	pointsAdded := 0
 	var lastDay *Day
@@ -118,9 +119,10 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 		day := &Day{Name:name, Expected:expected, WorkingDay:true}
 		if e, ok := timeline[name]; ok &&  index <= s.Today {
 			day.Total = e.Done + e.Planned + e.InProgress
+			total = day.Total.(int)
+			day.Expected =  float64(total) - (float64(index + 1) * perDay)
 			day.Top = day.Total.(int) - e.Done
 			if lastDay != nil {
-				log.Printf("Added points lastDay is: %+v\n", lastDay)
 				pointsAdded += (day.Total.(int) - lastDay.Total.(int))
 			}
 			day.Bottom = pointsAdded
@@ -128,12 +130,11 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 			day.Total = total
 			day.Bottom = pointsAdded
 		}
-		log.Printf("Processed day %+v\n", day)
 		s.Days = append(s.Days, *day)
 		lastDay = day
 
 	}
-	s.Days = append([]Day{{Name:"Planning", Top:total, WorkingDay:false, Expected:float64(total), Total:total, Bottom:0}}, s.Days...)
+	s.Days = append([]Day{{Name:"Planning", Top:planningTotal, WorkingDay:false, Expected:float64(planningTotal), Total:planningTotal, Bottom:0}}, s.Days...)
 	return s
 }
 
