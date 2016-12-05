@@ -100,7 +100,7 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 	m[dayStr] = true
 
 	s = &SprintStatus{Name:b.Sprint.Name, Today:indexOf(order, toDayStr(time.Now())), Days:[]Day{}}
-	firstDay, err := findFirstFilledDay(timeline, order)
+	firstDay, err := b.findFirstFilledDay()
 	if err != nil {
 		if 0 < len(b.TrelloEvents){
 			firstDay = b.TrelloEvents[len(b.TrelloEvents) - 1]
@@ -138,11 +138,35 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 	return s
 }
 
-func findFirstFilledDay(timeline map[string]TrelloState, order []string) (TrelloState, error) {
-	for _, day := range order {
-		state := timeline[day]
-		if state.InProgress != 0 || state.Planned != 0 || state.Done != 0 {
-			return state, nil
+
+func (b *Burndown) linearizedEvents() ([]TrelloState){
+	res := []TrelloState{}
+	var last *TrelloState
+	var lastDay = ""
+	for index, event := range b.TrelloEvents {
+		current := &event
+		day := toDayStr(current.Time)
+		if lastDay == ""{
+			last = current
+			lastDay = day
+			continue
+		}
+		if lastDay != day{
+			res = append(res, *last)
+			last = current
+			lastDay = day
+		}else if index == len(b.TrelloEvents) - 1{
+			res = append(res, *current)
+		}
+	}
+	return res
+}
+
+func (b *Burndown) findFirstFilledDay() (TrelloState, error) {
+	lin := b.linearizedEvents()
+	for _, event := range lin {
+		if event.InProgress != 0 || event.Planned != 0 || event.Done != 0 {
+			return event, nil
 		}
 	}
 	return TrelloState{}, errors.New("Not found")
