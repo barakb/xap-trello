@@ -54,9 +54,9 @@ func CreateNextSprintHandler(burndown *Burndown) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		log.Printf("sprint params are: %q\n", sprintParams)
+		log.Printf("sprint params are: %+v\n", sprintParams)
 		var name string = sprintParams.Name
-		if name != "" {
+		if name == "" {
 			log.Printf("missing sprint name %+v\n", sprintParams)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -100,13 +100,13 @@ func CreateGuessSprintParamsHandler() http.HandlerFunc {
 			return
 		}
 		sp := &SprintParams{Name:name, Start:start.Format(date_tmpl), End:end.Format(date_tmpl)}
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		if err := json.NewEncoder(w).Encode(sp); err != nil {
 			log.Printf("error %s\n", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		w.WriteHeader(http.StatusOK)
 
 	}
