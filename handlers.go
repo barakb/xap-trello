@@ -67,7 +67,7 @@ func CreateNextSprintHandler(burndown *Burndown) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		end, err := time.Parse(date_tmpl, sprintParams.Start)
+		end, err := time.Parse(date_tmpl, sprintParams.End)
 		if err != nil {
 			log.Printf("error %s\n", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
