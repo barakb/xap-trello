@@ -127,3 +127,12 @@ func FromJSONFile(val interface{}, filename string) error {
 	}
 	return json.Unmarshal(jsonBytes, val)
 }
+
+
+func ReadGithubToken() (*oauth2.Token, error) {
+	jsonToken, err := ioutil.ReadFile(TOKEN_FILE_NAME)
+	if err != nil{
+		return nil, err
+	}
+	return TokenFromJSON(string(jsonToken))
+}

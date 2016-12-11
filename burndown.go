@@ -283,6 +283,40 @@ func (b *Burndown) save() error {
 	w.Flush()
 	return nil
 }
+func (b *Burndown) commitAndPush() error {
+	startDate := b.Sprint.StartDate
+	filename := fmt.Sprintf("%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
+	token, err := ReadGithubToken()
+	if err != nil{
+		return err
+	}
+	git := NewGitRepository("data", "https://github.com/barakb/imc-sprints.git", token.AccessToken)
+	err = git.Init()
+	if err != nil{
+		return err
+	}
+
+	err = git.Add(filename)
+	if err != nil{
+		return err
+	}
+
+	err = git.Commit(fmt.Sprintf("Automatic update of file %s on %v", filename, time.Now()))
+	if err != nil{
+		return err
+	}
+
+	err = git.Rebase()
+	if err != nil{
+		return err
+	}
+
+	err = git.Push()
+	if err != nil{
+		return err
+	}
+	return nil
+}
 
 func (b *Burndown) load() (err error) {
 	startDate := b.Sprint.StartDate
@@ -318,8 +352,14 @@ func (b *Burndown) StartNewSprint(name string, start, end time.Time) chan struct
 }
 
 func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
-	b.save()
-
+	err :=  b.save()
+	if err != nil {
+		fmt.Printf("Got error %s while trying to sage changes\n", err.Error())
+	}
+	err = b.commitAndPush()
+	if err != nil {
+		fmt.Printf("Got error %s while trying to commit changes\n", err.Error())
+	}
 	if b.Jira.ActiveSprint.Name != "" {
 		fmt.Printf("Closing old sprint %s\n", b.Jira.ActiveSprint.Name)
 		_, _, err := b.Jira.Client.Board.CloseSprint(fmt.Sprintf("%d", b.Jira.ActiveSprint.ID))
@@ -367,8 +407,6 @@ func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
 		return err
 	}
 
-
-	//todo change active sprint
 	b.Sprint = *sprint
 	b.SprintStatus = SprintStatus{}
 	b.TrelloEvents = []TrelloState{}

@@ -7,15 +7,13 @@ import (
 	"golang.org/x/oauth2"
 	"github.com/google/go-github/github"
 	githuboauth "golang.org/x/oauth2/github"
-
-	"io/ioutil"
 )
 
 func main() {
 
 	config := &xap_trello.Oauth2Config{}
 	xap_trello.FromJSONFile(config, "github-secret.json")
-	token, err := readToken()
+	token, err := xap_trello.ReadGithubToken()
 
 	if err != nil{
 		http.HandleFunc("/", xap_trello.HandleMain)
@@ -42,11 +40,4 @@ func main() {
 		fmt.Printf("Logged in as GitHub user: %s\n", *user.Login)
 	}
 
-}
-func readToken() (*oauth2.Token, error) {
-	jsonToken, err := ioutil.ReadFile(xap_trello.TOKEN_FILE_NAME)
-	if err != nil{
-		return nil, err
-	}
-	return xap_trello.TokenFromJSON(string(jsonToken))
 }
