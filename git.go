@@ -35,7 +35,7 @@ func (git *Git) Log() error {
 }
 
 func (git *Git) Rebase() error {
-	ret := <-git.ExecCmd(3 * time.Second, nil, "pull", "--rebase", git.remote)
+	ret := <-git.ExecCmd(3 * time.Second, nil, "pull", "--rebase", "-X", "ours", git.remote)
 	return ret
 }
 
