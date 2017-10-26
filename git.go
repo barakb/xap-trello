@@ -14,7 +14,7 @@ import (
 )
 
 type Git struct {
-	local, remote, token string
+	local, remote, token, path string
 	log bool
 }
 
@@ -76,7 +76,7 @@ func (git *Git) ExecCmd(timeout time.Duration, withOutput io.Writer, arg ...stri
 	}
 	res := make(chan error, 1)
 	ctx, _ := context.WithTimeout(context.Background(), timeout)
-	cmd := exec.CommandContext(ctx, "git", arg...)
+	cmd := exec.CommandContext(ctx, fmt.Sprintf("%sgit", git.path), arg...)
 	cmd.Dir = git.local
 
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")

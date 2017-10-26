@@ -47,7 +47,7 @@ func HandleMain(w http.ResponseWriter, r *http.Request) {
 
 // /login
 func HandleGitHubLogin(w http.ResponseWriter, r *http.Request) {
-	url := oauthConf.AuthCodeURL(oauthStateString, oauth2.AccessTypeOnline)
+	url := oauthConf.AuthCodeURL(oauthStateString, oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 

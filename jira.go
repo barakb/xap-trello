@@ -33,14 +33,14 @@ func create(url string) (*Jira, error) {
 }
 
 func CreateXAPJiraOpen() (*Jira, error) {
-	j, err := create("https://xap-issues.atlassian.net")
+	j, err := create("https://insightedge.atlassian.net")
 	if err != nil {
 		return nil, err
 	}
 
 	boardsListOptions := &jira.BoardListOptions{
 		BoardType:      "scrum",
-		ProjectKeyOrID: "XAP",
+		ProjectKeyOrID: "GS",
 	}
 	boardsList, _, err := j.Client.Board.GetAllBoards(boardsListOptions)
 	if err != nil {
@@ -76,7 +76,7 @@ func CreateXAPJiraOpen() (*Jira, error) {
 	}else {
 		j.ActiveSprint = activeSprints[0]
 	}
-	project, _, err := j.Client.Project.Get("XAP")
+	project, _, err := j.Client.Project.Get("GS")
 	if err != nil {
 		return nil, err
 	}
@@ -112,11 +112,11 @@ func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl str
 	if summary == "" {
 		summary = name
 	}
-	summary = regexp.MustCompile("(?i)XAP-[^ ]+").ReplaceAllLiteralString(summary, "")
+	summary = regexp.MustCompile("(?i)GS-[^ ]+").ReplaceAllLiteralString(summary, "")
 	summary = strings.TrimLeft(regexp.MustCompile("\\([0-9.]+\\)").ReplaceAllLiteralString(summary, ""), " ")
 	summary = strings.TrimLeft(regexp.MustCompile("\\{[0-9.]+\\}").ReplaceAllLiteralString(summary, ""), " ")
 	summary = strings.TrimSpace(summary)
-	name = regexp.MustCompile("(?i)XAP-[^ ]+").ReplaceAllLiteralString(name, "")
+	name = regexp.MustCompile("(?i)GS-[^ ]+").ReplaceAllLiteralString(name, "")
 	name = strings.TrimLeft(regexp.MustCompile("\\([0-9.]+\\)").ReplaceAllLiteralString(name, ""), " ")
 	name = strings.TrimLeft(regexp.MustCompile("\\{[0-9.]+\\}").ReplaceAllLiteralString(name, ""), " ")
 	name = strings.TrimSpace(name)
@@ -126,7 +126,7 @@ func (j Jira) createXAPIssue(name, desc, issueTypeId, issueTypeName, cardUrl str
 				ID: issueTypeId,
 			},
 			Project: jira.Project{
-				Key: "XAP",
+				Key: "GS",
 			},
 			Summary: name,
 			Description: summary,

@@ -8,7 +8,7 @@ import (
 
 func main() {
 	fmt.Println("Jira")
-	jiraClient, err := jira.NewClient(nil, "https://xap-issues.atlassian.net")
+	jiraClient, err := jira.NewClient(nil, "https://insightedge.atlassian.net")
 	if err != nil {
 		panic(err)
 	}
@@ -19,6 +19,15 @@ func main() {
 		panic(err)
 	}
 
+	boardsListOptions := &jira.BoardListOptions{
+		BoardType:      "scrum",
+		ProjectKeyOrID: "GS",
+	}
+	boardsList, _, err := jiraClient.Board.GetAllBoards(boardsListOptions)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("boardList %#v\n", boardsList)
 	issue, _, err := jiraClient.Issue.Get("XAP-12797")
 	if err != nil {
 		panic(err)

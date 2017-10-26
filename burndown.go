@@ -291,6 +291,7 @@ func (b *Burndown) commitAndPush() error {
 		return err
 	}
 	git := NewGitRepository("data", "https://github.com/barakb/imc-sprints.git", token.AccessToken)
+	git.path = "/usr/local/git/bin/"
 	err = git.Init()
 	if err != nil{
 		return err
@@ -320,6 +321,7 @@ func (b *Burndown) commitAndPush() error {
 
 func (b *Burndown) load() (err error) {
 	startDate := b.Sprint.StartDate
+
 	filename := fmt.Sprintf("data/%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
 	f, err := os.Open(filename)
 	if err != nil {
