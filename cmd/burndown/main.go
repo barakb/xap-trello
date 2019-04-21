@@ -1,12 +1,11 @@
 package main
 
 import (
-	//"github.com/barakb/xap-trello"
-	"log"
-	"github.com/barakb/xap-trello"
-	"time"
-	"gopkg.in/tylerb/graceful.v1"
 	"fmt"
+	xap_trello "github.com/barakb/xap-trello"
+	"gopkg.in/tylerb/graceful.v1"
+	"log"
+	"time"
 )
 
 func main() {
@@ -27,8 +26,7 @@ func main() {
 
 	xap_trello.InitRouters()
 	router := xap_trello.NewRouter()
-	if err := graceful.RunWithErr(fmt.Sprintf(":%d", 6060), 10 * time.Second, router); err != nil {
+	if err := graceful.RunWithErr(fmt.Sprintf(":%d", 6060), 10*time.Second, router); err != nil {
 		log.Fatal(err)
 	}
 }
-

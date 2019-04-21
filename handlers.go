@@ -1,14 +1,14 @@
 package xap_trello
 
 import (
-	"net/http"
-	"html/template"
-	"fmt"
-	"time"
 	"encoding/json"
+	"fmt"
+	"html/template"
 	"log"
+	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 )
 
 const date_tmpl = "2006-01-02"
@@ -73,7 +73,8 @@ func CreateNextSprintHandler(burndown *Burndown) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		<- burndown.StartNewSprint(name, start, end)
+		_ = WriteSprint(Sprint{Name: name, Start: start, End: end})
+		<-burndown.StartNewSprint(name, start, end)
 		w.WriteHeader(http.StatusOK)
 	}
 }
@@ -99,7 +100,7 @@ func CreateGuessSprintParamsHandler() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		sp := &SprintParams{Name:name, Start:start.Format(date_tmpl), End:end.Format(date_tmpl)}
+		sp := &SprintParams{Name: name, Start: start.Format(date_tmpl), End: end.Format(date_tmpl)}
 		if err := json.NewEncoder(w).Encode(sp); err != nil {
 			log.Printf("error %s\n", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -114,7 +115,7 @@ func CreateGuessSprintParamsHandler() http.HandlerFunc {
 
 func indexOf(strings []string, value string) int {
 	for p, v := range strings {
-		if (v == value) {
+		if v == value {
 			return p
 		}
 	}
@@ -122,13 +123,12 @@ func indexOf(strings []string, value string) int {
 }
 
 func getNextSprintDefaults() (start, end time.Time, name string, err error) {
-	xapOpenJira, err := CreateXAPJiraOpen()
-	if err != nil {
-		return
+	sprint := ReadSprint()
+	if sprint == nil {
+		return time.Now(), time.Now(), "", fmt.Errorf("error: fail to read current sprint, can't compute next sprint defaults")
 	}
-	sprint, _, err := xapOpenJira.Client.Board.GetLastSprint(fmt.Sprintf("%d", xapOpenJira.MainScrumBoardId))
-	start = sprint.StartDate.AddDate(0, 0, 7)
-	end = sprint.EndDate.AddDate(0, 0, 7)
+	start = sprint.Start.AddDate(0, 0, 7)
+	end = sprint.End.AddDate(0, 0, 7)
 	name, err = suggestNextSprintName(sprint.Name)
 	fmt.Printf("Sprint is %+v\n", sprint)
 	return
@@ -142,7 +142,7 @@ func suggestNextSprintName(prev string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("Failed to convert %q to int, name is %q\n", match[2], prev)
 		}
-		return fmt.Sprintf("%s-M%d", match[1], i + 1), nil
+		return fmt.Sprintf("%s-M%d", match[1], i+1), nil
 	}
 	rcPattern := regexp.MustCompile(`(?i)(.*)-rc([0-9]+)`)
 	match = rcPattern.FindStringSubmatch(prev)
@@ -151,7 +151,7 @@ func suggestNextSprintName(prev string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("Failed to convert %q to int, name is %q\n", match[2], prev)
 		}
-		return fmt.Sprintf("%s-rc%d", match[1], i + 1), nil
+		return fmt.Sprintf("%s-rc%d", match[1], i+1), nil
 	}
 	return prev, nil
 }

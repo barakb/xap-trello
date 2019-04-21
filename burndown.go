@@ -1,27 +1,26 @@
 package xap_trello
 
 import (
-	"github.com/barakb/go-trello"
-	"log"
-	"time"
-	"github.com/barakb/go-jira"
-	"os"
-	"fmt"
 	"bufio"
 	"encoding/json"
-	"io/ioutil"
 	"errors"
+	"fmt"
+	"github.com/barakb/go-trello"
+	"io/ioutil"
+	"log"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type BurnDownData struct {
 	TrelloEvents []TrelloState `json:"trello_events"`
-	SprintStatus SprintStatus `json:"sprint_status"`
-	Version      int `json:"version"`
-	Sprint   jira.Sprint
+	SprintStatus SprintStatus  `json:"sprint_status"`
+	Version      int           `json:"version"`
+	Sprint       *Sprint
 }
 
 type Burndown struct {
@@ -30,22 +29,69 @@ type Burndown struct {
 	done     chan struct{}
 	commands chan BurndownCommand
 	Trello   *Trello
-	Jira     *Jira
+}
+
+type Sprint struct {
+	Name  string    `json:"name"`
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
+}
+
+func readSprint(path string) (*Sprint, error) {
+	fileHandler, err := os.Open(path)
+	if err != nil {
+		log.Printf("error %s\n", err.Error())
+		return nil, err
+	}
+	defer fileHandler.Close()
+	reader := bufio.NewReader(fileHandler)
+	sprint := Sprint{}
+	if err := json.NewDecoder(reader).Decode(&sprint); err != nil {
+		log.Printf("error %s\n", err.Error())
+		return nil, err
+	}
+	return &sprint, nil
+}
+
+func writeSprint(sprint Sprint, path string) error {
+	fileHandler, err := os.Create(path)
+	if err != nil {
+		log.Printf("error %s\n", err.Error())
+		return err
+	}
+
+	defer fileHandler.Close()
+	writer := bufio.NewWriter(fileHandler)
+	defer writer.Flush()
+	if err := json.NewEncoder(writer).Encode(&sprint); err != nil {
+		log.Printf("error %s\n", err.Error())
+		return err
+	}
+	return nil
 }
 
 func NewBurnDown() *Burndown {
-	xapOpenJira, err := CreateXAPJiraOpen()
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	xapTrello, err := CreateXAPTrello()
 	if err != nil {
 		log.Fatal(err)
 	}
-	burndown := &Burndown{Trello:xapTrello, commands: make(chan BurndownCommand), Jira:xapOpenJira, BurnDownData:BurnDownData{Sprint:xapOpenJira.ActiveSprint}}
+	burndown := &Burndown{Trello: xapTrello, commands: make(chan BurndownCommand), BurnDownData: BurnDownData{Sprint: ReadSprint()}}
 	go burndown.ScanLoop(10 * time.Second) //todo remove
 	return burndown
+}
+
+func ReadSprint() *Sprint {
+	s, e := readSprint("sprint.json")
+	if e != nil {
+		log.Printf("error while reading sprint from file: %s\n", e.Error())
+		return nil
+	}
+	return s
+}
+
+func WriteSprint(sprint Sprint) error {
+	return writeSprint(sprint, "sprint.json")
 }
 
 type BurndownCommand func(burndown *Burndown)
@@ -60,19 +106,19 @@ func (ss TrelloState) sameAs(other TrelloState) bool {
 }
 
 type Day struct {
-	Name       string `json:"name"`
+	Name       string      `json:"name"`
 	Total      interface{} `json:"total"`
 	Bottom     interface{} `json:"bottom"`
 	Top        interface{} `json:"top"`
-	Expected   float64 `json:"expected"`
-	WorkingDay bool `json:"working_day"`
+	Expected   float64     `json:"expected"`
+	WorkingDay bool        `json:"working_day"`
 }
 
 type SprintStatus struct {
 	Version int
 	Name    string `json:"name"`
-	Days    []Day `json:"days"`
-	Today   int `json:"today"`
+	Days    []Day  `json:"days"`
+	Today   int    `json:"today"`
 }
 
 func (b *Burndown) statePerDay(events []TrelloState) map[string]TrelloState {
@@ -87,24 +133,24 @@ func (b *Burndown) statePerDay(events []TrelloState) map[string]TrelloState {
 func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatus) {
 	order := []string{}
 	m := map[string]bool{}
-	date := b.Sprint.StartDate
-	for date.Before(*b.Sprint.EndDate) {
-		dayStr := toDayStr(*date)
+	date := b.Sprint.Start
+	for date.Before(b.Sprint.End) {
+		dayStr := toDayStr(date)
 		order = append(order, dayStr)
 		m[dayStr] = true
 		nextDay := date.Add(24 * time.Hour)
-		date = &nextDay
+		date = nextDay
 	}
-	dayStr := toDayStr(*b.Sprint.EndDate)
+	dayStr := toDayStr(b.Sprint.End)
 	order = append(order, dayStr)
 	m[dayStr] = true
 
-	s = &SprintStatus{Name:b.Sprint.Name, Today:indexOf(order, toDayStr(time.Now())), Days:[]Day{}}
+	s = &SprintStatus{Name: b.Sprint.Name, Today: indexOf(order, toDayStr(time.Now())), Days: []Day{}}
 	firstDay, err := b.findFirstFilledDay()
 	if err != nil {
-		if 0 < len(b.TrelloEvents){
-			firstDay = b.TrelloEvents[len(b.TrelloEvents) - 1]
-		}else {
+		if 0 < len(b.TrelloEvents) {
+			firstDay = b.TrelloEvents[len(b.TrelloEvents)-1]
+		} else {
 			log.Printf("Fail to find data, error is: %q\n", err)
 			return s
 		}
@@ -115,12 +161,12 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 	pointsAdded := 0
 	var lastDay *Day
 	for index, name := range order {
-		expected := float64(total) - (float64(index + 1) * perDay)
-		day := &Day{Name:name, Expected:expected, WorkingDay:true}
-		if e, ok := timeline[name]; ok &&  index <= s.Today {
+		expected := float64(total) - (float64(index+1) * perDay)
+		day := &Day{Name: name, Expected: expected, WorkingDay: true}
+		if e, ok := timeline[name]; ok && index <= s.Today {
 			day.Total = e.Done + e.Planned + e.InProgress
 			total = day.Total.(int)
-			day.Expected =  float64(total) - (float64(index + 1) * perDay)
+			day.Expected = float64(total) - (float64(index+1) * perDay)
 			day.Top = day.Total.(int) - e.Done
 			if lastDay != nil {
 				pointsAdded += (day.Total.(int) - lastDay.Total.(int))
@@ -134,28 +180,27 @@ func (b *Burndown) createSprint(timeline map[string]TrelloState) (s *SprintStatu
 		lastDay = day
 
 	}
-	s.Days = append([]Day{{Name:"Planning", Top:planningTotal, WorkingDay:false, Expected:float64(planningTotal), Total:planningTotal, Bottom:0}}, s.Days...)
+	s.Days = append([]Day{{Name: "Planning", Top: planningTotal, WorkingDay: false, Expected: float64(planningTotal), Total: planningTotal, Bottom: 0}}, s.Days...)
 	return s
 }
 
-
-func (b *Burndown) linearizedEvents() ([]TrelloState){
+func (b *Burndown) linearizedEvents() []TrelloState {
 	res := []TrelloState{}
 	var last *TrelloState
 	var lastDay = ""
 	for index, event := range b.TrelloEvents {
 		current := &event
 		day := toDayStr(current.Time)
-		if lastDay == ""{
+		if lastDay == "" {
 			last = current
 			lastDay = day
 			continue
 		}
-		if lastDay != day{
+		if lastDay != day {
 			res = append(res, *last)
 			last = current
 			lastDay = day
-		}else if index == len(b.TrelloEvents) - 1{
+		} else if index == len(b.TrelloEvents)-1 {
 			res = append(res, *current)
 		}
 	}
@@ -216,7 +261,7 @@ func (b *Burndown) ScanLoop(delay time.Duration) {
 
 		//log.Printf("sprintState is %+v\n", sprintState)
 
-		if len(b.TrelloEvents) == 0 || !sprintState.sameAs(b.TrelloEvents[len(b.TrelloEvents) - 1]) {
+		if len(b.TrelloEvents) == 0 || !sprintState.sameAs(b.TrelloEvents[len(b.TrelloEvents)-1]) {
 			b.TrelloEvents = append(b.TrelloEvents, sprintState)
 			log.Printf("Timeline changed %v\n", b.TrelloEvents)
 			compressedTimeline := b.compressTimeline()
@@ -263,7 +308,7 @@ func (b *Burndown) save() error {
 	if err != nil {
 		return err
 	}
-	startDate := b.Sprint.StartDate
+	startDate := b.Sprint.Start
 	filename := fmt.Sprintf("data/%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
 
 	f, err := os.Create(filename)
@@ -284,43 +329,43 @@ func (b *Burndown) save() error {
 	return nil
 }
 func (b *Burndown) commitAndPush() error {
-	startDate := b.Sprint.StartDate
+	startDate := b.Sprint.Start
 	filename := fmt.Sprintf("%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
 	token, err := ReadGithubToken()
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	git := NewGitRepository("data", "https://github.com/barakb/imc-sprints.git", token.AccessToken)
 	git.path = "/usr/local/git/bin/"
 	err = git.Init()
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	err = git.Add(filename)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	err = git.Commit(fmt.Sprintf("Automatic update of file %s on %v", filename, time.Now()))
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	err = git.Rebase()
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	err = git.Push()
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	return nil
 }
 
 func (b *Burndown) load() (err error) {
-	startDate := b.Sprint.StartDate
+	startDate := b.Sprint.Start
 
 	filename := fmt.Sprintf("data/%d-%02d-%02d-%s-logs.json", startDate.Year(), startDate.Month(), startDate.Day(), b.Sprint.Name)
 	f, err := os.Open(filename)
@@ -354,20 +399,13 @@ func (b *Burndown) StartNewSprint(name string, start, end time.Time) chan struct
 }
 
 func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
-	err :=  b.save()
+	err := b.save()
 	if err != nil {
 		fmt.Printf("Got error %s while trying to sage changes\n", err.Error())
 	}
 	err = b.commitAndPush()
 	if err != nil {
 		fmt.Printf("Got error %s while trying to commit changes\n", err.Error())
-	}
-	if b.Jira.ActiveSprint.Name != "" {
-		fmt.Printf("Closing old sprint %s\n", b.Jira.ActiveSprint.Name)
-		_, _, err := b.Jira.Client.Board.CloseSprint(fmt.Sprintf("%d", b.Jira.ActiveSprint.ID))
-		if err != nil {
-			return err
-		}
 	}
 
 	board, err := b.Trello.Board("XAP Scrum")
@@ -381,10 +419,10 @@ func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
 	for index, l := range lists {
 		if index == 0 {
 			err := l.Close()
-			if err != nil{
+			if err != nil {
 				return err
 			}
-			break;
+			break
 		}
 	}
 
@@ -393,27 +431,10 @@ func (b *Burndown) startNewSprint(name string, start, end time.Time) error {
 		return err
 	}
 
-	fmt.Printf("Creating a new sprint %s\n", name)
-	sprint, _, err := b.Jira.Client.Board.CreateSprint(name, start, end, b.Jira.MainScrumBoardId)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Moving items from trello to sprint %s\n", sprint.Name)
-	err = Trello2Jira(3, sprint.ID)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Starting sprint %s\n", sprint.Name)
-	sprint, _, err = b.Jira.Client.Board.StartSprint(fmt.Sprintf("%d", sprint.ID))
-	if err != nil {
-		return err
-	}
-
-	b.Sprint = *sprint
+	b.Sprint = ReadSprint()
 	b.SprintStatus = SprintStatus{}
 	b.TrelloEvents = []TrelloState{}
 	b.Version = 0
-	b.Jira.ActiveSprint = *sprint
 	return nil
 }
 
@@ -422,7 +443,7 @@ func sumPoints(lst trello.List) (p int) {
 	for _, card := range cards {
 		p += points(card.Name)
 	}
-	return p;
+	return p
 }
 
 func toDayStr(time time.Time) string {

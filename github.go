@@ -1,13 +1,14 @@
 package xap_trello
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
-	"net/http"
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
 	githuboauth "golang.org/x/oauth2/github"
-	"encoding/json"
 	"io/ioutil"
+	"net/http"
 )
 
 var (
@@ -18,8 +19,8 @@ var (
 		ClientID:     "",
 		ClientSecret: "",
 		// select level of access you want https://developer.github.com/v3/oauth/#scopes
-		Scopes:       []string{"user:email", "public_repo"},
-		Endpoint:     githuboauth.Endpoint,
+		Scopes:   []string{"user:email", "public_repo"},
+		Endpoint: githuboauth.Endpoint,
 	}
 	// random string for oauth2 API calls to protect against CSRF
 	oauthStateString = "thisshouldberandom"
@@ -34,7 +35,7 @@ const TOKEN_FILE_NAME = "github-token.json"
 // /
 func HandleMain(w http.ResponseWriter, r *http.Request) {
 	config := &Oauth2Config{}
-	if err := FromJSONFile(config, "github-secret.json"); err != nil{
+	if err := FromJSONFile(config, "github-secret.json"); err != nil {
 		fmt.Printf("Error in reading github client secret from file github-secret.json error is: %s\n", err.Error())
 	}
 
@@ -80,7 +81,7 @@ func HandleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	oauthClient := oauthConf.Client(oauth2.NoContext, token)
 	client := github.NewClient(oauthClient)
-	user, _, err := client.Users.Get("")
+	user, _, err := client.Users.Get(context.Background(), "")
 	if err != nil {
 		fmt.Printf("client.Users.Get() faled with '%s'\n", err)
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
@@ -128,10 +129,9 @@ func FromJSONFile(val interface{}, filename string) error {
 	return json.Unmarshal(jsonBytes, val)
 }
 
-
 func ReadGithubToken() (*oauth2.Token, error) {
 	jsonToken, err := ioutil.ReadFile(TOKEN_FILE_NAME)
-	if err != nil{
+	if err != nil {
 		return nil, err
 	}
 	return TokenFromJSON(string(jsonToken))
