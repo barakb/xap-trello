@@ -1,4 +1,4 @@
-FROM golang:1.7.1
+FROM golang:1.27.1
 MAINTAINER Barak Bar Orion  <barak.bar@gmail.com>
 
 RUN rm /bin/sh && ln -s /bin/bash /bin/sh
